@@ -44,7 +44,7 @@ void G_WriteClientSessionData( gclient_t *client ) {
 	const char	*s;
 	const char	*var;
 
-	s = va("%i %i %i %i %i %i %i", 
+	s = va("%i %i %i %i %i %i %i",
 		client->sess.sessionTeam,
 		client->sess.spectatorNum,
 		client->sess.spectatorState,
@@ -126,29 +126,36 @@ void G_InitSessionData( gclient_t *client, char *userinfo ) {
 			SetTeam( &g_entities[client - level.clients], value );
 		}
 	} else {
-		if ( value[0] == 's' ) {
-			// a willing spectator, not a waiting-in-line
-			sess->sessionTeam = TEAM_SPECTATOR;
-		} else {
-			switch ( g_gametype.integer ) {
-			default:
-			case GT_FFA:
-			case GT_SINGLE_PLAYER:
-				if ( g_maxGameClients.integer > 0 && 
-					level.numNonSpectatorClients >= g_maxGameClients.integer ) {
-					sess->sessionTeam = TEAM_SPECTATOR;
-				} else {
-					sess->sessionTeam = TEAM_FREE;
+		//aibsmod - make g_teamAutoJoin apply to non-team games as well...
+		if (g_teamAutoJoin.integer) {
+			if ( value[0] == 's' ) {
+				// a willing spectator, not a waiting-in-line
+				sess->sessionTeam = TEAM_SPECTATOR;
+			} else {
+				switch ( g_gametype.integer ) {
+				default:
+				case GT_FFA:
+				case GT_SINGLE_PLAYER:
+				case GT_RAMBO:
+					if ( g_maxGameClients.integer > 0 &&
+						level.numNonSpectatorClients >= g_maxGameClients.integer ) {
+						sess->sessionTeam = TEAM_SPECTATOR;
+					} else {
+						sess->sessionTeam = TEAM_FREE;
+					}
+					break;
+				case GT_TOURNAMENT:
+					// if the game is full, go into a waiting mode
+					if ( level.numNonSpectatorClients >= 2 ) {
+						sess->sessionTeam = TEAM_SPECTATOR;
+					} else {
+						sess->sessionTeam = TEAM_FREE;
+					}
+					break;
 				}
-				break;
-			case GT_TOURNAMENT:
-				// if the game is full, go into a waiting mode
-				if ( level.numNonSpectatorClients >= 2 ) {
-					sess->sessionTeam = TEAM_SPECTATOR;
-				} else {
-					sess->sessionTeam = TEAM_FREE;
-				}
-				break;
+			}
+			else { //aibsmod - ...and make everyone join as a spectator if not set
+				sess->sessionTeam = TEAM_SPECTATOR;
 			}
 		}
 
@@ -173,7 +180,7 @@ void G_InitWorldSession( void ) {
 
 	trap_Cvar_VariableStringBuffer( "session", s, sizeof(s) );
 	gt = atoi( s );
-	
+
 	// if the gametype changed since the last session, don't use any
 	// client sessions
 	if ( g_gametype.integer != gt ) {

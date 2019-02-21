@@ -181,6 +181,10 @@ void SP_team_neutralobelisk( gentity_t *ent );
 #endif
 void SP_item_botroam( gentity_t *ent ) { }
 
+//aibsmod - football spawn functions (g_football.c)
+void SP_football_redgoal(gentity_t *ent);
+void SP_football_bluegoal(gentity_t *ent);
+
 spawn_t	spawns[] = {
 	// info entities don't do anything at all, but provide positional
 	// information for things controlled by other processes
@@ -254,6 +258,10 @@ spawn_t	spawns[] = {
 #endif
 	{"item_botroam", SP_item_botroam},
 
+	//aibsmod - football spawn functions
+	{"football_redgoal", SP_football_redgoal},
+	{"football_bluegoal", SP_football_bluegoal},
+
 	{NULL, 0}
 };
 
@@ -277,6 +285,10 @@ qboolean G_CallSpawn( gentity_t *ent ) {
 	// check item spawn functions
 	for ( item=bg_itemlist+1 ; item->classname ; item++ ) {
 		if ( !strcmp(item->classname, ent->classname) ) {
+			//aibsmod - check gametype before spawning items
+			if (g_gametype.integer == GT_ROCKETARENA)
+				return qfalse;
+
 			G_SpawnItem( ent, item );
 			return qtrue;
 		}
@@ -305,7 +317,7 @@ so message texts can be multi-line
 char *G_NewString( const char *string ) {
 	char	*newb, *new_p;
 	int		i,l;
-	
+
 	l = strlen(string) + 1;
 
 	newb = G_Alloc( l );
@@ -325,7 +337,7 @@ char *G_NewString( const char *string ) {
 			*new_p++ = string[i];
 		}
 	}
-	
+
 	return newb;
 }
 
@@ -398,7 +410,7 @@ void G_SpawnGEntityFromSpawnVars( void ) {
 	int			i;
 	gentity_t	*ent;
 	char		*s, *value, *gametypeName;
-	static char *gametypeNames[] = {"ffa", "tournament", "single", "team", "ctf", "oneflag", "obelisk", "harvester"};
+	static char *gametypeNames[] = {"ffa", "tournament", "single", "rocketarena", "rambo", "team", "teamrambo", "ctf", "oneflag", "obelisk", "harvester", "football", "teamtournament" };
 
 	// get the next free entity
 	ent = G_Spawn();
@@ -406,6 +418,44 @@ void G_SpawnGEntityFromSpawnVars( void ) {
 	for ( i = 0 ; i < level.numSpawnVars ; i++ ) {
 		G_ParseField( level.spawnVars[i][0], level.spawnVars[i][1], ent );
 	}
+
+	if (g_gametype.integer == GT_FOOTBALL) {
+		//aibsmod - find a suitable spawn point for the football
+		if ((level.footballSpawnFound < 1) && (!strcmp(ent->classname, "team_CTF_neutralflag"))) {
+			VectorCopy(ent->s.origin, level.footballSpawnPoint);
+			level.footballSpawnFound = 1;
+			G_FreeEntity(ent);
+			return;
+		}
+
+		if ((level.footballSpawnFound < 10) && (!strcmp(ent->classname, "football_ball"))) {
+			VectorCopy(ent->s.origin, level.footballSpawnPoint);
+			level.footballSpawnFound = 10;
+			G_FreeEntity(ent);
+			return;
+		}
+
+		//aibsmod - find spawn points for the goal posts
+		if ((level.goalSpawnPointsFound < 10) && (!strcmp(ent->classname, "team_CTF_redflag"))) {
+			VectorCopy(ent->s.origin, level.redGoalSpawnPoint);
+			level.redGoalYaw = ent->s.angles[1];
+			level.goalSpawnPointsFound += 1;
+			G_FreeEntity(ent);
+		}
+
+		if ((level.goalSpawnPointsFound < 10) && (!strcmp(ent->classname, "team_CTF_blueflag"))) {
+			VectorCopy(ent->s.origin, level.blueGoalSpawnPoint);
+			level.blueGoalYaw = ent->s.angles[1];
+			level.goalSpawnPointsFound += 1;
+			G_FreeEntity(ent);
+		}
+
+		if ((level.goalSpawnPointsFound < 20) && (!strcmp(ent->classname, "football_redgoal")))
+			level.goalSpawnPointsFound += 10;
+
+		if ((level.goalSpawnPointsFound < 20) && (!strcmp(ent->classname, "football_bluegoal")))
+			level.goalSpawnPointsFound += 10;
+	} //football
 
 	// check for "notsingle" flag
 	if ( g_gametype.integer == GT_SINGLE_PLAYER ) {
@@ -523,7 +573,7 @@ qboolean G_ParseSpawnVars( void ) {
 	}
 
 	// go through all the key / value pairs
-	while ( 1 ) {	
+	while ( 1 ) {
 		// parse key
 		if ( !trap_GetEntityToken( keyname, sizeof( keyname ) ) ) {
 			G_Error( "G_ParseSpawnVars: EOF without closing brace" );
@@ -532,8 +582,8 @@ qboolean G_ParseSpawnVars( void ) {
 		if ( keyname[0] == '}' ) {
 			break;
 		}
-		
-		// parse value	
+
+		// parse value
 		if ( !trap_GetEntityToken( com_token, sizeof( com_token ) ) ) {
 			G_Error( "G_ParseSpawnVars: EOF without closing brace" );
 		}
@@ -591,6 +641,13 @@ void SP_worldspawn( void ) {
 	G_SpawnString( "enableBreath", "0", &s );
 	trap_Cvar_Set( "g_enableBreath", s );
 
+	//aibsmod extensions
+	G_SpawnString("spawn_health", "0", &s);
+	trap_Cvar_Set("am_spawnHealth", s);
+
+	G_SpawnString("spawn_nomg", "0", &s);
+	trap_Cvar_Set("am_spawnNoMG", s);
+
 	g_entities[ENTITYNUM_WORLD].s.number = ENTITYNUM_WORLD;
 	g_entities[ENTITYNUM_WORLD].r.ownerNum = ENTITYNUM_NONE;
 	g_entities[ENTITYNUM_WORLD].classname = "worldspawn";
@@ -625,6 +682,10 @@ void G_SpawnEntitiesFromString( void ) {
 	level.spawning = qtrue;
 	level.numSpawnVars = 0;
 
+	//aibsmod - start looking for the football and goal spawn points
+	level.footballSpawnFound = 0;
+	level.goalSpawnPointsFound = 0;
+
 	// the worldspawn is not an actual entity, but it still
 	// has a "spawn" function to perform any global setup
 	// needed by a level (setting configstrings or cvars, etc)
@@ -636,7 +697,7 @@ void G_SpawnEntitiesFromString( void ) {
 	// parse ents
 	while( G_ParseSpawnVars() ) {
 		G_SpawnGEntityFromSpawnVars();
-	}	
+	}
 
 	level.spawning = qfalse;			// any future calls to G_Spawn*() will be errors
 }

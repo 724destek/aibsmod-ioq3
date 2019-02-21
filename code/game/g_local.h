@@ -29,7 +29,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 //==================================================================
 
 // the "gameversion" client command will print this plus compile date
-#define	GAMEVERSION	BASEGAME
+//aibsmod - moved over to aibsmod.h
+//#define	GAMEVERSION	"baseq3"
 
 #define BODY_QUEUE_SIZE		8
 
@@ -90,13 +91,13 @@ struct gentity_s {
 	char		*model;
 	char		*model2;
 	int			freetime;			// level.time when the object was freed
-	
+
 	int			eventTime;			// events will be cleared EVENT_VALID_MSEC after set
 	qboolean	freeAfterEvent;
 	qboolean	unlinkAfterEvent;
 
 	qboolean	physicsObject;		// if true, it can be pushed by movers and fall off edges
-									// all game items are physicsObjects, 
+									// all game items are physicsObjects,
 	float		physicsBounce;		// 1.0 = continuous bounce, 0.0 = no bounce
 	int			clipmask;			// brushes with this content value will be collided against
 									// when moving.  items and corpses do not collide against
@@ -174,6 +175,23 @@ struct gentity_s {
 	float		random;
 
 	gitem_t		*item;			// for bonus items
+
+	//aibsmod stuff
+	int			spawnTime;				//time of creation
+
+	int			rocketHits;				//for Rocket Arena
+	int			rocketHitter;			//for Rocket Arena
+	float		ownerVelocity;			//for Rocket Arena, owner's velocity at time of firing
+	int			jumpTime;				//for Rocket Arena, time last touched ground
+
+	int			dieTime;				//for entities with limited lifespans
+	int			bounceCount;			//for EF_BOUNCE_LIMITED
+	float		laserDistance;			//tripmine fires when this changes
+
+	int			ignoreOwnerClearTime;	//time to clear EF_IGNORE_OWNER flag
+
+	int			redeeming;				//controlling a redeemer
+	gentity_t	*redeemClone;			//body to return to after redeemer explodes
 };
 
 
@@ -233,7 +251,7 @@ typedef struct {
 // client data that stays across multiple respawns, but is cleared
 // on each level change or team change at ClientBegin()
 typedef struct {
-	clientConnected_t	connected;	
+	clientConnected_t	connected;
 	usercmd_t	cmd;				// we would lose angles if not persistant
 	qboolean	localClient;		// true if "ip" info key is "localhost"
 	qboolean	initialSpawn;		// the first spawn should be at a cool location
@@ -246,6 +264,9 @@ typedef struct {
 	int			voteCount;			// to prevent people from constantly calling votes
 	int			teamVoteCount;		// to prevent people from constantly calling votes
 	qboolean	teamInfo;			// send team overlay updates?
+
+	//aibsmod-specific stuff
+	gentity_t	*buttonsEntity;		//the entity that will have this client's EV_CURRENT_BUTTONS events
 } clientPersistant_t;
 
 
@@ -315,6 +336,11 @@ struct gclient_s {
 	int			ammoTimes[WP_NUM_WEAPONS];
 	int			invulnerabilityTime;
 #endif
+
+	//aibsmod-specific stuff
+	gentity_t	*lastAttacker;			//last enemy attacker as calculated by aibsmod
+	int			teleportTime;			//next allowed time to teleport
+	int			lastFollowDirection;	//so left/right keys in spectator mode don't cycle too fast
 
 	char		*areabits;
 };
@@ -407,6 +433,30 @@ typedef struct {
 #ifdef MISSIONPACK
 	int			portalSequence;
 #endif
+
+	//aibsmod stuff
+	gentity_t	*rambo;
+	gentity_t	*ballCarrier;
+	gentity_t	*football;
+	gentity_t	*ballShooter;
+	gentity_t	*ballPasser;
+
+	int			goalTime;
+	vec3_t		footballSpawnPoint;
+	int			footballSpawnFound;
+
+	gentity_t	*redpost_top, *redpost_back, *redpost_left, *redpost_right;
+	gentity_t	*bluepost_top, *bluepost_back, *bluepost_left, *bluepost_right;
+	vec3_t		redGoalSpawnPoint;
+	vec3_t		blueGoalSpawnPoint;
+	float		redGoalYaw;
+	float		blueGoalYaw;
+	int			goalSpawnPointsFound;
+
+	gentity_t	*redGoalTrigger;
+	gentity_t	*blueGoalTrigger;
+
+	int			ballLastTouchTime;
 } level_locals_t;
 
 
@@ -746,6 +796,29 @@ extern	vmCvar_t	g_singlePlayer;
 extern	vmCvar_t	g_proxMineTimeout;
 extern	vmCvar_t	g_localTeamPref;
 
+//aibsmod server side cvars, also see bg_public.h
+extern	vmCvar_t	am_piercingRail;
+extern	vmCvar_t	am_hyperGauntlet;
+extern	vmCvar_t	am_rocketBounce;
+extern	vmCvar_t	am_redeemerBFG;
+extern	vmCvar_t	am_teleportDelay;
+
+extern	vmCvar_t	am_spawnHealth;
+extern	vmCvar_t	am_spawnNoMG;
+
+extern	vmCvar_t	am_selfDamage;
+extern	vmCvar_t	am_fallDamage;
+extern	vmCvar_t	am_damageKick;
+extern	vmCvar_t	am_nonRamboKill;
+
+extern	vmCvar_t	am_dropTeamPowerups;
+extern	vmCvar_t	am_droppableWeapons;
+
+extern	vmCvar_t	am_redGoalRotation;
+extern	vmCvar_t	am_blueGoalRotation;
+
+extern	vmCvar_t	am_rocketArena_groundLaunch;
+
 void	trap_Print( const char *text );
 void	trap_Error( const char *text ) __attribute__((noreturn));
 int		trap_Milliseconds( void );
@@ -951,3 +1024,45 @@ int		trap_GeneticParentsAndChildSelection(int numranks, float *ranks, int *paren
 
 void	trap_SnapVector( float *v );
 
+//aibsmod stuff
+
+//g_aibsmod.c
+float VectorMagnitude(const vec3_t v);
+void G_SetAngles(gentity_t *ent, vec3_t angles);
+void G_SetRotatedBoundingBox(gentity_t *ent, const vec3_t orgmins, const vec3_t orgmaxs);
+void give_all_weapons(gclient_t *player);
+void give_rocketarena_weapons(gclient_t *player);
+void teleport_player_straight(gentity_t *player);
+void switch_rambo(gentity_t *oldrambo, gentity_t *newrambo);
+void TeleportPlayerWithoutShooting(gentity_t *player, vec3_t dest, vec3_t angles);
+gentity_t *ClonePlayer(gentity_t *ent);
+void ReturnToClone(gentity_t *ent, gentity_t *clone);
+void G_RunClone(gentity_t *clone);
+
+//g_football.c
+void football_create(vec3_t origin);
+void goalpost_create(vec3_t origin, int color);
+void goalpost_rotate(float yaw, int color);
+void football_reset(gentity_t *ball);
+void football_catch(gentity_t *player);
+void football_steal(gentity_t *player);
+void football_drop(gentity_t *ball, gentity_t *player, vec3_t extraVelocity, gentity_t *cause);
+void football_shoot(gentity_t *ball, gentity_t *player, vec3_t direction);
+void football_goal(gentity_t *ball, int color);
+void G_RunFootball(gentity_t *ball);
+void G_BounceFootball(gentity_t *ball, trace_t *trace);
+
+//g_tripmine.c
+void Tripmine_Arm(gentity_t *ent);
+void Tripmine_Think(gentity_t *ent);
+void Tripmine_Explode(gentity_t *ent);
+qboolean CheckTripmineAttack(gentity_t *ent);
+
+//g_redeemer.c
+void Redeemer_Fire(gentity_t *ent);
+void Redeemer_Check(gentity_t *ent);
+void Redeemer_Explode(gentity_t *ent);
+
+//g_rocketarena.c
+void ra_register_hit(gentity_t *attacker, gentity_t *inflictor, gentity_t *target);
+void ra_hit_ground(gentity_t *ent);

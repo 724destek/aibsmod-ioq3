@@ -96,6 +96,36 @@ vmCvar_t	g_enableBreath;
 vmCvar_t	g_proxMineTimeout;
 #endif
 
+//shared cvars, see bg_public.h
+vmCvar_t	am_fastWeaponSwitch;
+vmCvar_t	am_trainingMode;
+vmCvar_t	am_airControl;
+vmCvar_t	am_disableWeapons;
+vmCvar_t	am_tripmineGrenades;
+
+//server-side cvars
+vmCvar_t	am_spawnHealth;
+vmCvar_t	am_spawnNoMG;
+
+vmCvar_t	am_piercingRail;
+vmCvar_t	am_hyperGauntlet;
+vmCvar_t	am_rocketBounce;
+vmCvar_t	am_redeemerBFG;
+vmCvar_t	am_teleportDelay;
+
+vmCvar_t	am_selfDamage;
+vmCvar_t	am_fallDamage;
+vmCvar_t	am_damageKick;
+vmCvar_t	am_nonRamboKill;
+
+vmCvar_t	am_dropTeamPowerups;
+vmCvar_t	am_droppableWeapons;
+
+vmCvar_t	am_redGoalRotation;
+vmCvar_t	am_blueGoalRotation;
+
+vmCvar_t	am_rocketArena_groundLaunch;
+
 static cvarTable_t		gameCvarTable[] = {
 	// don't override the cheat state set by the system
 	{ &g_cheats, "sv_cheats", "", 0, 0, qfalse },
@@ -178,8 +208,37 @@ static cvarTable_t		gameCvarTable[] = {
 	{ &pmove_msec, "pmove_msec", "8", CVAR_SYSTEMINFO, 0, qfalse},
 
 	{ &g_rankings, "g_rankings", "0", 0, 0, qfalse},
-	{ &g_localTeamPref, "g_localTeamPref", "", 0, 0, qfalse }
+	{ &g_localTeamPref, "g_localTeamPref", "", 0, 0, qfalse },
 
+	//aibsmod shared cvars (bg_public.h)
+	{ &am_fastWeaponSwitch, "am_fastWeaponSwitch", "0", CVAR_SERVERINFO | CVAR_ARCHIVE, 0, qtrue },
+	{ &am_trainingMode, "am_trainingMode", "0", CVAR_SERVERINFO | CVAR_ARCHIVE, 0, qtrue },
+	{ &am_airControl, "am_airControl", "1.0", CVAR_SERVERINFO | CVAR_ARCHIVE, 0, qtrue },
+	{ &am_disableWeapons, "am_disableWeapons", "0", CVAR_SERVERINFO | CVAR_ARCHIVE, 0, qtrue },
+	{ &am_tripmineGrenades, "am_tripmineGrenades", "0", CVAR_SERVERINFO | CVAR_ARCHIVE, 0, qtrue },
+
+	//aibsmod server-side cvars
+	{ &am_spawnHealth, "am_spawnHealth", "0", 0, 0, qtrue },
+	{ &am_spawnNoMG, "am_spawnNoMG", "0", 0, 0, qtrue },
+
+	{ &am_piercingRail, "am_piercingRail", "0", CVAR_ARCHIVE, 0, qtrue },
+	{ &am_hyperGauntlet, "am_hyperGauntlet", "0", CVAR_ARCHIVE, 0, qtrue },
+	{ &am_rocketBounce, "am_rocketBounce", "0", CVAR_ARCHIVE, 0, qtrue },
+	{ &am_redeemerBFG, "am_redeemerBFG", "0", CVAR_ARCHIVE, 0, qtrue },
+	{ &am_teleportDelay, "am_teleportDelay", "-1", CVAR_ARCHIVE, 0, qtrue },
+
+	{ &am_selfDamage, "am_selfDamage", "1", CVAR_ARCHIVE, 0, qtrue },
+	{ &am_fallDamage, "am_fallDamage", "1", CVAR_ARCHIVE, 0, qtrue },
+	{ &am_damageKick, "am_damageKick", "1", CVAR_ARCHIVE, 0, qtrue },
+	{ &am_nonRamboKill, "am_nonRamboKill", "2", CVAR_ARCHIVE, 0, qtrue },
+
+	{ &am_dropTeamPowerups, "am_dropTeamPowerups", "0", CVAR_ARCHIVE, 0, qtrue },
+	{ &am_droppableWeapons, "am_droppableWeapons", "0", CVAR_ARCHIVE, 0, qtrue },
+
+	{ &am_redGoalRotation, "am_redGoalRotation", "0.0", 0, 0, qtrue },
+	{ &am_blueGoalRotation, "am_blueGoalRotation", "0.0", 0, 0, qtrue },
+
+	{ &am_rocketArena_groundLaunch, "am_midair_groundLaunch", "0", CVAR_ARCHIVE, 0, qtrue }
 };
 
 static int gameCvarTableSize = ARRAY_LEN( gameCvarTable );
@@ -320,11 +379,11 @@ void G_RemapTeamShaders( void ) {
 	char string[1024];
 	float f = level.time * 0.001;
 	Com_sprintf( string, sizeof(string), "team_icon/%s_red", g_redteam.string );
-	AddRemap("textures/ctf2/redteam01", string, f); 
-	AddRemap("textures/ctf2/redteam02", string, f); 
+	AddRemap("textures/ctf2/redteam01", string, f);
+	AddRemap("textures/ctf2/redteam02", string, f);
 	Com_sprintf( string, sizeof(string), "team_icon/%s_blue", g_blueteam.string );
-	AddRemap("textures/ctf2/blueteam01", string, f); 
-	AddRemap("textures/ctf2/blueteam02", string, f); 
+	AddRemap("textures/ctf2/blueteam01", string, f);
+	AddRemap("textures/ctf2/blueteam02", string, f);
 	trap_SetConfigstring(CS_SHADERSTATE, BuildShaderStateConfig());
 #endif
 }
@@ -374,21 +433,47 @@ void G_UpdateCvars( void ) {
 	int			i;
 	cvarTable_t	*cv;
 	qboolean remapped = qfalse;
+	int			j;
+	int			oldSpeed;
 
 	for ( i = 0, cv = gameCvarTable ; i < gameCvarTableSize ; i++, cv++ ) {
 		if ( cv->vmCvar ) {
+			if (cv->vmCvar == &g_speed)
+				oldSpeed = g_speed.integer;
+
 			trap_Cvar_Update( cv->vmCvar );
 
 			if ( cv->modificationCount != cv->vmCvar->modificationCount ) {
 				cv->modificationCount = cv->vmCvar->modificationCount;
 
 				if ( cv->trackChange ) {
-					trap_SendServerCommand( -1, va("print \"Server: %s changed to %s\n\"", 
-						cv->cvarName, cv->vmCvar->string ) );
+					if ((cv->vmCvar == &g_speed) && (g_speed.integer == oldSpeed)) {
+//						trap_SendServerCommand(-1, "print \"Server: g_speed changed without changing value.\n\"");
+					} else {
+						trap_SendServerCommand( -1, va("print \"Server: %s changed to %s\n\"",
+							cv->cvarName, cv->vmCvar->string ) );
+					}
 				}
 
 				if (cv->teamShader) {
 					remapped = qtrue;
+				}
+
+				//aibsmod - check if am_trainingMode was changed to 1
+				if ((cv->vmCvar == &am_trainingMode) && (am_trainingMode.integer == 1)) {
+					for (j=0; j<g_maxclients.integer; j++) {
+						if (level.clients[j].pers.connected != CON_CONNECTED)
+							continue;
+
+						give_all_weapons(level.clients + j);
+					}
+				}
+
+				//aibsmod - check if goalpost rotations were changed
+				if (cv->vmCvar == &am_redGoalRotation) {
+					goalpost_rotate(level.redGoalYaw - am_redGoalRotation.value, 1);
+				} else if (cv->vmCvar == &am_blueGoalRotation) {
+					goalpost_rotate(level.blueGoalYaw - am_blueGoalRotation.value, 2);
 				}
 			}
 		}
@@ -473,7 +558,7 @@ void G_InitGame( int levelTime, int randomSeed, int restart ) {
 	}
 
 	// let the server system know where the entites are
-	trap_LocateGameData( level.gentities, level.num_entities, sizeof( gentity_t ), 
+	trap_LocateGameData( level.gentities, level.num_entities, sizeof( gentity_t ),
 		&level.clients[0].ps, sizeof( level.clients[0] ) );
 
 	// reserve some spots for dead player bodies
@@ -482,7 +567,31 @@ void G_InitGame( int levelTime, int randomSeed, int restart ) {
 	ClearRegisteredItems();
 
 	// parse the key/value pairs and spawn gentities
+	//aibsmod - also look for football and goal post spawn points
 	G_SpawnEntitiesFromString();
+
+	//aibsmod initialization
+	level.rambo = NULL;
+	if (g_gametype.integer == GT_FOOTBALL) {
+		if (level.footballSpawnFound) { //found any kind of spawn point for the football
+			football_create(level.footballSpawnPoint);
+		}
+
+		if (level.goalSpawnPointsFound == 2) { //found CTF flag posts we should convert to goal posts
+			goalpost_create(level.redGoalSpawnPoint, TEAM_RED);
+			goalpost_create(level.blueGoalSpawnPoint, TEAM_BLUE);
+			trap_Cvar_Set("am_redGoalRotation", "0.0");
+			trap_Cvar_Set("am_blueGoalRotation", "0.0");
+		}
+	} else {
+		level.football = NULL;
+	}
+
+	if (g_gametype.integer == GT_ROCKETARENA) {
+		trap_Cvar_Set("am_disableWeapons", "0");
+		trap_Cvar_Set("am_tripmineGrenades", "0");
+		trap_Cvar_Set("am_rocketBounce", "0");
+	}
 
 	// general initialization
 	G_FindTeams();
@@ -603,7 +712,7 @@ void AddTournamentPlayer( void ) {
 			continue;
 		}
 		// never select the dedicated follow or scoreboard clients
-		if ( client->sess.spectatorState == SPECTATOR_SCOREBOARD || 
+		if ( client->sess.spectatorState == SPECTATOR_SCOREBOARD ||
 			client->sess.spectatorClient < 0  ) {
 			continue;
 		}
@@ -634,11 +743,11 @@ void AddTournamentQueue(gclient_t *client)
 {
 	int index;
 	gclient_t *curclient;
-	
+
 	for(index = 0; index < level.maxclients; index++)
 	{
 		curclient = &level.clients[index];
-		
+
 		if(curclient->pers.connected != CON_DISCONNECTED)
 		{
 			if(curclient == client)
@@ -808,7 +917,7 @@ void CalculateRanks( void ) {
 
 			if ( level.clients[i].sess.sessionTeam != TEAM_SPECTATOR ) {
 				level.numNonSpectatorClients++;
-			
+
 				// decide if this should be auto-followed
 				if ( level.clients[i].pers.connected == CON_CONNECTED ) {
 					level.numPlayingClients++;
@@ -826,10 +935,16 @@ void CalculateRanks( void ) {
 					}
 				}
 			}
+
+			//aibsmod - let the spectators count as voters, too
+			else {
+				if ( !(g_entities[i].r.svFlags & SVF_BOT) )
+					level.numVotingClients++;
+			}
 		}
 	}
 
-	qsort( level.sortedClients, level.numConnectedClients, 
+	qsort( level.sortedClients, level.numConnectedClients,
 		sizeof(level.sortedClients[0]), SortRanks );
 
 	// set the rank value for all clients that are connected and not spectators
@@ -845,7 +960,7 @@ void CalculateRanks( void ) {
 				cl->ps.persistant[PERS_RANK] = 1;
 			}
 		}
-	} else {	
+	} else {
 		rank = -1;
 		score = 0;
 		for ( i = 0;  i < level.numPlayingClients; i++ ) {
@@ -1036,7 +1151,7 @@ void BeginIntermission( void ) {
 ExitLevel
 
 When the intermission has been exited, the server is either killed
-or moved to a new level based on the "nextmap" cvar 
+or moved to a new level based on the "nextmap" cvar
 
 =============
 */
@@ -1059,7 +1174,7 @@ void ExitLevel (void) {
 			level.changemap = NULL;
 			level.intermissiontime = 0;
 		}
-		return;	
+		return;
 	}
 
 	trap_Cvar_VariableStringBuffer( "nextmap", nextmap, sizeof(nextmap) );
@@ -1314,7 +1429,7 @@ qboolean ScoreIsTied( void ) {
 	if ( level.numPlayingClients < 2 ) {
 		return qfalse;
 	}
-	
+
 	if ( g_gametype.integer >= GT_TEAM ) {
 		return level.teamScores[TEAM_RED] == level.teamScores[TEAM_BLUE];
 	}
@@ -1767,7 +1882,7 @@ void G_RunThink (gentity_t *ent) {
 	if (thinktime > level.time) {
 		return;
 	}
-	
+
 	ent->nextthink = 0;
 	if (!ent->think) {
 		G_Error ( "NULL ent->think");
@@ -1838,8 +1953,25 @@ void G_RunFrame( int levelTime ) {
 			continue;
 		}
 
+		//aibsmod - clear EF_IGNORE_OWNER flag if time
+		if ((ent->s.eFlags & EF_IGNORE_OWNER) && ent->ignoreOwnerClearTime && (level.time >= ent->ignoreOwnerClearTime)) {
+			ent->s.eFlags &= ~EF_IGNORE_OWNER;
+		}
+
 		if ( ent->s.eType == ET_MISSILE ) {
 			G_RunMissile( ent );
+			continue;
+		}
+
+		//aibsmod
+		if (ent->s.eType == ET_FOOTBALL) {
+			G_RunFootball(ent);
+			continue;
+		}
+
+		//aibsmod
+		if (ent->s.eType == ET_CLONE) {
+			G_RunClone(ent);
 			continue;
 		}
 

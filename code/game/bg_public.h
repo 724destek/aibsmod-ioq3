@@ -25,7 +25,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // because games can change separately from the main system version, we need a
 // second version that must match between game and cgame
 
-#define	GAME_VERSION		BASEGAME "-1"
+//aibsmod - moved over to aibsmod.h
+//#define	GAME_VERSION		BASEGAME "-1"
+#include "aibsmod.h"
 
 #define	DEFAULT_GRAVITY		800
 #define	GIB_HEALTH			-40
@@ -86,7 +88,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define	CS_SOUNDS				(CS_MODELS+MAX_MODELS)
 #define	CS_PLAYERS				(CS_SOUNDS+MAX_SOUNDS)
 #define CS_LOCATIONS			(CS_PLAYERS+MAX_CLIENTS)
-#define CS_PARTICLES			(CS_LOCATIONS+MAX_LOCATIONS) 
+#define CS_PARTICLES			(CS_LOCATIONS+MAX_LOCATIONS)
 
 #define CS_MAX					(CS_PARTICLES+MAX_LOCATIONS)
 
@@ -94,20 +96,27 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #error overflow: (CS_MAX) > MAX_CONFIGSTRINGS
 #endif
 
+//aibsmod - added custom gametypes
 typedef enum {
 	GT_FFA,				// free for all
 	GT_TOURNAMENT,		// one on one tournament
 	GT_SINGLE_PLAYER,	// single player ffa
+	GT_ROCKETARENA,
+	GT_RAMBO,
 
 	//-- team games go after this --
 
 	GT_TEAM,			// team deathmatch
+	GT_RAMBO_TEAM,
 	GT_CTF,				// capture the flag
 	GT_1FCTF,
 	GT_OBELISK,
 	GT_HARVESTER,
+	GT_FOOTBALL,
 	GT_MAX_GAME_TYPE
 } gametype_t;
+
+extern const char *gameNames[GT_MAX_GAME_TYPE]; //see bg_misc.c
 
 typedef enum { GENDER_MALE, GENDER_FEMALE, GENDER_NEUTER } gender_t;
 
@@ -129,11 +138,14 @@ typedef enum {
 	PM_DEAD,		// no acceleration or turning, but free falling
 	PM_FREEZE,		// stuck in place with no control
 	PM_INTERMISSION,	// no movement or status bar
-	PM_SPINTERMISSION	// no movement or status bar
+	PM_SPINTERMISSION,	// no movement or status bar
+
+	//aibsmod
+	PM_REDEEMER		//controlling a redeemer missile
 } pmtype_t;
 
 typedef enum {
-	WEAPON_READY, 
+	WEAPON_READY,
 	WEAPON_RAISING,
 	WEAPON_DROPPING,
 	WEAPON_FIRING
@@ -153,6 +165,9 @@ typedef enum {
 #define PMF_FOLLOW			4096	// spectate following another player
 #define PMF_SCOREBOARD		8192	// spectate as a scoreboard
 #define PMF_INVULEXPAND		16384	// invulnerability sphere set to full size
+
+#define PMF_GOTFOOTBALL		0x00008000	//just got football, disable attack until next time (like PMF_RESPAWNED but doesn't affect jumps)
+#define PMF_FIREDREDEEMER	0x00010000	//just fired redeemer, don't clip client angles yet
 
 #define	PMF_ALL_TIMES	(PMF_TIME_WATERJUMP|PMF_TIME_LAND|PMF_TIME_KNOCKBACK)
 
@@ -197,6 +212,12 @@ void Pmove (pmove_t *pmove);
 
 //===================================================================================
 
+//aibsmod - shared cvars (must set these CVAR_SERVERINFO so clients can be notified of changes)
+extern	vmCvar_t	am_fastWeaponSwitch;
+extern	vmCvar_t	am_trainingMode;
+extern	vmCvar_t	am_airControl;
+extern	vmCvar_t	am_disableWeapons;
+extern	vmCvar_t	am_tripmineGrenades;
 
 // player_state->stats[] indexes
 // NOTE: may not have more than 16
@@ -207,7 +228,7 @@ typedef enum {
 	STAT_PERSISTANT_POWERUP,
 #endif
 	STAT_WEAPONS,					// 16 bit fields
-	STAT_ARMOR,				
+	STAT_ARMOR,
 	STAT_DEAD_YAW,					// look this direction when dead (FIXME: get rid of?)
 	STAT_CLIENTS_READY,				// bit mask of clients wishing to exit the intermission (FIXME: configstring?)
 	STAT_MAX_HEALTH					// health / armor limit, changeable by handicap
@@ -263,6 +284,12 @@ typedef enum {
 #define EF_AWARD_DENIED		0x00040000		// denied
 #define EF_TEAMVOTED		0x00080000		// already cast a team vote
 
+//aibsmod stuff
+#define EF_BOUNCE_LIMITED	0x01000000		//like EF_BOUNCE, but limited times
+#define EF_AWARD_GOAL		0x00000800
+#define EF_IGNORE_OWNER		0x00000100		//don't allow .otherEntityNum to interact
+#define EF_DIFFERENT_MODEL	0x00000020		//draw a different model (e.g. redeemer missile) instead of a player
+
 // NOTE: may not have more than 16
 typedef enum {
 	PW_NONE,
@@ -283,6 +310,8 @@ typedef enum {
 	PW_DOUBLER,
 	PW_AMMOREGEN,
 	PW_INVULNERABILITY,
+
+	PW_CARRIER,				//aibsmod - generic rambo / football carrier
 
 	PW_NUM_POWERUPS
 
@@ -447,8 +476,24 @@ typedef enum {
 	EV_TAUNT_FOLLOWME,
 	EV_TAUNT_GETFLAG,
 	EV_TAUNT_GUARDBASE,
-	EV_TAUNT_PATROL
+	EV_TAUNT_PATROL,
 
+	//aibsmod events
+	EV_RAMBO_STEAL,			//rambo changed (might have just died)
+	EV_RAMBO_KILL,			//rambo killed someone
+
+	EV_FOOTBALL_GOAL,
+	EV_FOOTBALL_PASS,		//used for all ball control
+
+	EV_ROCKETARENA_HIT,
+	EV_ROCKETARENA_COMBO,
+
+	EV_CURRENT_BUTTONS,		//button state update (sent every frame)
+
+	EV_DROP_WEAPON,
+
+	EV_TRIPMINE_FIRE,		//pmove communicates this to server if tripmine is being fired
+	EV_TRIPMINE				//tripmine sounds
 } entity_event_t;
 
 
@@ -559,7 +604,7 @@ typedef enum {
 //team task
 typedef enum {
 	TEAMTASK_NONE,
-	TEAMTASK_OFFENSE, 
+	TEAMTASK_OFFENSE,
 	TEAMTASK_DEFENSE,
 	TEAMTASK_PATROL,
 	TEAMTASK_FOLLOW,
@@ -600,7 +645,15 @@ typedef enum {
 	MOD_KAMIKAZE,
 	MOD_JUICED,
 #endif
-	MOD_GRAPPLE
+	MOD_GRAPPLE,
+
+	//aibsmod stuff
+	MOD_RAILGUN_PIERCE,
+	MOD_ROCKET_BOUNCE,
+	MOD_ROCKET_BOUNCE_SPLASH,
+	MOD_TRIPMINE_SPLASH,
+	MOD_AIRROCKET
+
 } meansOfDeath_t;
 
 
@@ -685,6 +738,14 @@ typedef enum {
 	ET_INVISIBLE,
 	ET_GRAPPLE,				// grapple hooked on wall
 	ET_TEAM,
+
+	//aibsmod
+	ET_FOOTBALL,
+	ET_FOOTBALL_GOAL,
+	ET_FOOTBALL_SOLID,
+	ET_TRIPMINE,
+	ET_BBOX,
+	ET_CLONE,
 
 	ET_EVENTS				// any of the EV_* events can be added freestanding
 							// by setting eType to ET_EVENTS + eventNum

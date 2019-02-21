@@ -36,7 +36,7 @@ float	pm_duckScale = 0.25f;
 float	pm_swimScale = 0.50f;
 
 float	pm_accelerate = 10.0f;
-float	pm_airaccelerate = 1.0f;
+//float	pm_airaccelerate = 1.0f;
 float	pm_wateraccelerate = 4.0f;
 float	pm_flyaccelerate = 8.0f;
 
@@ -47,6 +47,7 @@ float	pm_spectatorfriction = 5.0f;
 
 int		c_pmove = 0;
 
+static void PM_RedeemerMove(void);
 
 /*
 ===============
@@ -145,9 +146,9 @@ void PM_ClipVelocity( vec3_t in, vec3_t normal, vec3_t out, float overbounce ) {
 	float	backoff;
 	float	change;
 	int		i;
-	
+
 	backoff = DotProduct (in, normal);
-	
+
 	if ( backoff < 0 ) {
 		backoff *= overbounce;
 	} else {
@@ -173,9 +174,9 @@ static void PM_Friction( void ) {
 	float	*vel;
 	float	speed, newspeed, control;
 	float	drop;
-	
+
 	vel = pm->ps->velocity;
-	
+
 	VectorCopy( vel, vec );
 	if ( pml.walking ) {
 		vec[2] = 0;	// ignore slope movement
@@ -251,9 +252,9 @@ static void PM_Accelerate( vec3_t wishdir, float wishspeed, float accel ) {
 	if (accelspeed > addspeed) {
 		accelspeed = addspeed;
 	}
-	
+
 	for (i=0 ; i<3 ; i++) {
-		pm->ps->velocity[i] += accelspeed*wishdir[i];	
+		pm->ps->velocity[i] += accelspeed*wishdir[i];
 	}
 #else
 	// proper way (avoids strafe jump maxspeed bug), but feels bad
@@ -345,7 +346,7 @@ static void PM_SetMovementDir( void ) {
 			pm->ps->movementDir = 1;
 		} else if ( pm->ps->movementDir == 6 ) {
 			pm->ps->movementDir = 7;
-		} 
+		}
 	}
 }
 
@@ -523,7 +524,7 @@ static void PM_WaterMove( void ) {
 	if ( pml.groundPlane && DotProduct( pm->ps->velocity, pml.groundTrace.plane.normal ) < 0 ) {
 		vel = VectorLength(pm->ps->velocity);
 		// slide along the ground plane
-		PM_ClipVelocity (pm->ps->velocity, pml.groundTrace.plane.normal, 
+		PM_ClipVelocity (pm->ps->velocity, pml.groundTrace.plane.normal,
 			pm->ps->velocity, OVERCLIP );
 
 		VectorNormalize(pm->ps->velocity);
@@ -633,13 +634,15 @@ static void PM_AirMove( void ) {
 	wishspeed *= scale;
 
 	// not on ground, so little effect on velocity
-	PM_Accelerate (wishdir, wishspeed, pm_airaccelerate);
+//	PM_Accelerate (wishdir, wishspeed, pm_airaccelerate);
+	//aibsmod - use am_airControl
+	PM_Accelerate(wishdir, wishspeed, am_airControl.value);
 
 	// we may have a ground plane that is very steep, even
 	// though we don't have a groundentity
 	// slide along the steep plane
 	if ( pml.groundPlane ) {
-		PM_ClipVelocity (pm->ps->velocity, pml.groundTrace.plane.normal, 
+		PM_ClipVelocity (pm->ps->velocity, pml.groundTrace.plane.normal,
 			pm->ps->velocity, OVERCLIP );
 	}
 
@@ -769,7 +772,7 @@ static void PM_WalkMove( void ) {
 	// when a player gets hit, they temporarily lose
 	// full control, which allows them to be moved a bit
 	if ( ( pml.groundTrace.surfaceFlags & SURF_SLICK ) || pm->ps->pm_flags & PMF_TIME_KNOCKBACK ) {
-		accelerate = pm_airaccelerate;
+		accelerate = am_airControl.value;
 	} else {
 		accelerate = pm_accelerate;
 	}
@@ -789,7 +792,7 @@ static void PM_WalkMove( void ) {
 	vel = VectorLength(pm->ps->velocity);
 
 	// slide along the ground plane
-	PM_ClipVelocity (pm->ps->velocity, pml.groundTrace.plane.normal, 
+	PM_ClipVelocity (pm->ps->velocity, pml.groundTrace.plane.normal,
 		pm->ps->velocity, OVERCLIP );
 
 	// don't decrease velocity when going up or down a slope
@@ -878,7 +881,7 @@ static void PM_NoclipMove( void ) {
 
 	fmove = pm->cmd.forwardmove;
 	smove = pm->cmd.rightmove;
-	
+
 	for (i=0 ; i<3 ; i++)
 		wishvel[i] = pml.forward[i]*fmove + pml.right[i]*smove;
 	wishvel[2] += pm->cmd.upmove;
@@ -1147,7 +1150,7 @@ static void PM_GroundTrace( void ) {
 		pml.walking = qfalse;
 		return;
 	}
-	
+
 	// slopes that are too steep will not be considered onground
 	if ( trace.plane.normal[2] < MIN_WALK_NORMAL ) {
 		if ( pm->debugLevel ) {
@@ -1176,7 +1179,7 @@ static void PM_GroundTrace( void ) {
 		if ( pm->debugLevel ) {
 			Com_Printf("%i:Land\n", c_pmove);
 		}
-		
+
 		PM_CrashLand();
 
 		// don't do landing time if we were just going down a slope
@@ -1215,7 +1218,7 @@ static void PM_SetWaterLevel( void ) {
 
 	point[0] = pm->ps->origin[0];
 	point[1] = pm->ps->origin[1];
-	point[2] = pm->ps->origin[2] + MINS_Z + 1;	
+	point[2] = pm->ps->origin[2] + MINS_Z + 1;
 	cont = pm->pointcontents( point, pm->ps->clientNum );
 
 	if ( cont & MASK_WATER ) {
@@ -1354,7 +1357,7 @@ static void PM_Footsteps( void ) {
 		}
 		return;
 	}
-	
+
 
 	footstep = qfalse;
 
@@ -1473,14 +1476,17 @@ static void PM_BeginWeaponChange( int weapon ) {
 	if ( !( pm->ps->stats[STAT_WEAPONS] & ( 1 << weapon ) ) ) {
 		return;
 	}
-	
+
 	if ( pm->ps->weaponstate == WEAPON_DROPPING ) {
 		return;
 	}
 
 	PM_AddEvent( EV_CHANGE_WEAPON );
 	pm->ps->weaponstate = WEAPON_DROPPING;
-	pm->ps->weaponTime += 200;
+
+	if (!am_fastWeaponSwitch.integer) //fast weapon switch
+		pm->ps->weaponTime += 200;
+
 	PM_StartTorsoAnim( TORSO_DROP );
 }
 
@@ -1504,7 +1510,10 @@ static void PM_FinishWeaponChange( void ) {
 
 	pm->ps->weapon = weapon;
 	pm->ps->weaponstate = WEAPON_RAISING;
-	pm->ps->weaponTime += 250;
+
+	if (!am_fastWeaponSwitch.integer) //fast weapon switch
+		pm->ps->weaponTime += 250;
+
 	PM_StartTorsoAnim( TORSO_RAISE );
 }
 
@@ -1541,6 +1550,10 @@ static void PM_Weapon( void ) {
 	if ( pm->ps->pm_flags & PMF_RESPAWNED ) {
 		return;
 	}
+
+	//also don't allow attack if we've just got the football
+	if (pm->ps->pm_flags & PMF_GOTFOOTBALL)
+		return;
 
 	// ignore if spectator
 	if ( pm->ps->persistant[PERS_TEAM] == TEAM_SPECTATOR ) {
@@ -1627,20 +1640,34 @@ static void PM_Weapon( void ) {
 
 	pm->ps->weaponstate = WEAPON_FIRING;
 
-	// check for out of ammo
-	if ( ! pm->ps->ammo[ pm->ps->weapon ] ) {
-		PM_AddEvent( EV_NOAMMO );
-		pm->ps->weaponTime += 500;
-		return;
-	}
+	//aibsmod - tripmines behave a bit differently
+	if (am_tripmineGrenades.integer && (pm->ps->weapon == WP_GRENADE_LAUNCHER)) {
+		//out of ammo
+		if ((pm->ps->ammo[WP_GRENADE_LAUNCHER] >= 0) && (pm->ps->ammo[WP_GRENADE_LAUNCHER] < 5)) {
+			PM_AddEvent(EV_NOAMMO);
+			pm->ps->weaponTime += 500;
+			return;
+		}
 
-	// take an ammo away if not infinite
-	if ( pm->ps->ammo[ pm->ps->weapon ] != -1 ) {
-		pm->ps->ammo[ pm->ps->weapon ]--;
-	}
+		//server will take care of subtracting ammo
 
-	// fire weapon
-	PM_AddEvent( EV_FIRE_WEAPON );
+		PM_AddEvent(EV_TRIPMINE_FIRE);
+	} else {
+		// check for out of ammo
+		if ( ! pm->ps->ammo[ pm->ps->weapon ] ) {
+			PM_AddEvent( EV_NOAMMO );
+			pm->ps->weaponTime += 500;
+			return;
+		}
+
+		// take an ammo away if not infinite
+		if ( pm->ps->ammo[ pm->ps->weapon ] != -1 ) {
+			pm->ps->ammo[ pm->ps->weapon ]--;
+		}
+
+		// fire weapon
+		PM_AddEvent( EV_FIRE_WEAPON );
+	}
 
 	switch( pm->ps->weapon ) {
 	default:
@@ -1848,6 +1875,11 @@ void PmoveSingle (pmove_t *pmove) {
 		pm->tracemask &= ~CONTENTS_BODY;	// corpses can fly through bodies
 	}
 
+	//aibsmod - players can go through bodies in training mode
+	if (am_trainingMode.integer) {
+		pm->tracemask &= ~CONTENTS_BODY;
+	}
+
 	// make sure walking button is clear if they are running, to avoid
 	// proxy no-footsteps cheats
 	if ( abs( pm->cmd.forwardmove ) > 64 || abs( pm->cmd.rightmove ) > 64 ) {
@@ -1861,8 +1893,10 @@ void PmoveSingle (pmove_t *pmove) {
 		pm->ps->eFlags &= ~EF_TALK;
 	}
 
+	//aibsmod - added PMF_GOTFOOTBALL flags to the following two statements
+
 	// set the firing flag for continuous beam weapons
-	if ( !(pm->ps->pm_flags & PMF_RESPAWNED) && pm->ps->pm_type != PM_INTERMISSION && pm->ps->pm_type != PM_NOCLIP
+	if ( !(pm->ps->pm_flags & PMF_RESPAWNED) && !(pm->ps->pm_flags & PMF_GOTFOOTBALL) && pm->ps->pm_type != PM_INTERMISSION && pm->ps->pm_type != PM_NOCLIP
 		&& ( pm->cmd.buttons & BUTTON_ATTACK ) && pm->ps->ammo[ pm->ps->weapon ] ) {
 		pm->ps->eFlags |= EF_FIRING;
 	} else {
@@ -1870,9 +1904,9 @@ void PmoveSingle (pmove_t *pmove) {
 	}
 
 	// clear the respawned flag if attack and use are cleared
-	if ( pm->ps->stats[STAT_HEALTH] > 0 && 
+	if ( pm->ps->stats[STAT_HEALTH] > 0 &&
 		!( pm->cmd.buttons & (BUTTON_ATTACK | BUTTON_USE_HOLDABLE) ) ) {
-		pm->ps->pm_flags &= ~PMF_RESPAWNED;
+		pm->ps->pm_flags &= ~(PMF_RESPAWNED | PMF_GOTFOOTBALL);
 	}
 
 	// if talk button is down, dissallow all other input
@@ -1940,6 +1974,13 @@ void PmoveSingle (pmove_t *pmove) {
 	if ( pm->ps->pm_type == PM_NOCLIP ) {
 		PM_NoclipMove ();
 		PM_DropTimers ();
+		return;
+	}
+
+	//aibsmod
+	if (pm->ps->pm_type == PM_REDEEMER) {
+		PM_RedeemerMove();
+		PM_DropTimers();
 		return;
 	}
 
@@ -2066,3 +2107,30 @@ void Pmove (pmove_t *pmove) {
 
 }
 
+//aibsmod
+static void PM_RedeemerMove(void)
+{
+	vec3_t oldDirection;
+	vec3_t newDirection;
+
+	//On the first frame, set up missile's velocity
+	if (pm->ps->pm_flags & PMF_FIREDREDEEMER) {
+		pm->ps->pm_flags &= ~(PMF_FIREDREDEEMER);
+
+		VectorCopy(pml.forward, newDirection);
+	}
+
+	//On subsequent frames, add a fraction of looking direction to missile's velocity
+	else {
+		VectorCopy(pm->ps->velocity, oldDirection);
+		VectorNormalize(oldDirection);
+
+		//Add movement constant (times frame time) times look vector to missile vector
+		VectorMA(oldDirection, REDEEMER_MOVE_CONSTANT*pml.frametime, pml.forward, newDirection);
+		VectorNormalize(newDirection);
+	}
+
+	//Velocity = REDEEMER_VELOCITY*newDirection, calculate origin
+	VectorMA(vec3_origin, REDEEMER_VELOCITY, newDirection, pm->ps->velocity);
+	VectorMA(pm->ps->origin, pml.frametime, pm->ps->velocity, pm->ps->origin);
+}

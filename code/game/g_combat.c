@@ -96,7 +96,7 @@ void TossClientItems( gentity_t *self ) {
 		}
 	}
 
-	if ( weapon > WP_MACHINEGUN && weapon != WP_GRAPPLING_HOOK && 
+	if ( weapon > WP_MACHINEGUN && weapon != WP_GRAPPLING_HOOK &&
 		self->client->ps.ammo[ weapon ] ) {
 		// find the item type for this weapon
 		item = BG_FindItemForWeapon( weapon );
@@ -106,7 +106,8 @@ void TossClientItems( gentity_t *self ) {
 	}
 
 	// drop all the powerups if not in teamplay
-	if ( g_gametype.integer != GT_TEAM ) {
+	//aibsmod - or if teamplay drop is enabled
+	if ((am_dropTeamPowerups.integer) || ((g_gametype.integer != GT_TEAM) && (g_gametype.integer != GT_RAMBO_TEAM) && (g_gametype.integer != GT_FOOTBALL))) {
 		angle = 45;
 		for ( i = 1 ; i < PW_NUM_POWERUPS ; i++ ) {
 			if ( self->client->ps.powerups[ i ] > level.time ) {
@@ -309,7 +310,14 @@ char	*modNames[] = {
 	"MOD_KAMIKAZE",
 	"MOD_JUICED",
 #endif
-	"MOD_GRAPPLE"
+	"MOD_GRAPPLE",
+
+	//aibsmod stuff
+	"MOD_RAILGUN_PIERCE",
+	"MOD_ROCKET_BOUNCE",
+	"MOD_ROCKET_BOUNCE_SPLASH",
+	"MOD_TRIPMINE_SPLASH",
+	"MOD_AIRROCKET"
 };
 
 #ifdef MISSIONPACK
@@ -464,6 +472,14 @@ void player_die( gentity_t *self, gentity_t *inflictor, gentity_t *attacker, int
 #endif
 	self->client->ps.pm_type = PM_DEAD;
 
+	//aibsmod - change all premature deaths to air rocket deaths in Rocket Arena
+	if (self->rocketHits) {
+		inflictor = NULL;
+		attacker = &g_entities[self->rocketHitter];
+		damage = 100000;
+		meansOfDeath = MOD_AIRROCKET;
+	}
+
 	if ( attacker ) {
 		killer = attacker->s.number;
 		if ( attacker->client ) {
@@ -487,8 +503,8 @@ void player_die( gentity_t *self, gentity_t *inflictor, gentity_t *attacker, int
 		obit = modNames[meansOfDeath];
 	}
 
-	G_LogPrintf("Kill: %i %i %i: %s killed %s by %s\n", 
-		killer, self->s.number, meansOfDeath, killerName, 
+	G_LogPrintf("Kill: %i %i %i: %s killed %s by %s\n",
+		killer, self->s.number, meansOfDeath, killerName,
 		self->client->pers.netname, obit );
 
 	// broadcast the death event to everyone
@@ -502,44 +518,91 @@ void player_die( gentity_t *self, gentity_t *inflictor, gentity_t *attacker, int
 
 	self->client->ps.persistant[PERS_KILLED]++;
 
-	if (attacker && attacker->client) {
-		attacker->client->lastkilled_client = self->s.number;
-
-		if ( attacker == self || OnSameTeam (self, attacker ) ) {
-			AddScore( attacker, self->r.currentOrigin, -1 );
+		if (attacker == self) { //rambo suicide
+			AddScore(attacker, self->r.currentOrigin, -1);
+		} else if (OnSameTeam(self, attacker)) {
+			if ((g_gametype.integer == GT_RAMBO_TEAM) && (level.rambo == self)) //teammate killed rambo
+				AddScore(attacker, self->r.currentOrigin, -2);
+			else //teammate killed teammate
+				AddScore(attacker, self->r.currentOrigin, -1);
 		} else {
-			AddScore( attacker, self->r.currentOrigin, 1 );
+			if ((g_gametype.integer == GT_RAMBO) || (g_gametype.integer == GT_RAMBO_TEAM)) {
+
+				if (level.rambo == attacker) { //Rambo killed player
+					if (g_gametype.integer == GT_RAMBO_TEAM)
+						AddScore(attacker, self->r.currentOrigin, 2);
+					else
+						AddScore(attacker, self->r.currentOrigin, 1);
+
+					G_AddEvent(attacker, EV_RAMBO_KILL, 0);
+				} else if (level.rambo == self) { //Player killed Rambo
+					AddScore(attacker, self->r.currentOrigin, 1);
+				} else {
+					if (g_gametype.integer == GT_RAMBO)
+						if (am_nonRamboKill.integer == 2) //Penalty for non-rambo kills
+							AddScore(attacker, self->r.currentOrigin, -1);
+					else if (g_gametype.integer == GT_RAMBO_TEAM)
+						AddScore(attacker, self->r.currentOrigin, 1);
+				}
+			} else {
+				AddScore( attacker, self->r.currentOrigin, 1 );
+			}
 
 			if( meansOfDeath == MOD_GAUNTLET ) {
-				
-				// play humiliation on player
-				attacker->client->ps.persistant[PERS_GAUNTLET_FRAG_COUNT]++;
+				//aibsmod - no "humiliation" in Rocket Arena
+				if (g_gametype.integer != GT_ROCKETARENA) {				// play humiliation on player
+					attacker->client->ps.persistant[PERS_GAUNTLET_FRAG_COUNT]++;
 
-				// add the sprite over the player's head
+					// add the sprite over the player's head
+					attacker->client->ps.eFlags &= ~(EF_AWARD_IMPRESSIVE | EF_AWARD_EXCELLENT | EF_AWARD_GAUNTLET | EF_AWARD_ASSIST | EF_AWARD_DEFEND | EF_AWARD_CAP );
+					attacker->client->ps.eFlags |= EF_AWARD_GAUNTLET;
+					attacker->client->rewardTime = level.time + REWARD_SPRITE_TIME;
+
+					// also play humiliation on target
+					self->client->ps.persistant[PERS_PLAYEREVENTS] ^= PLAYEREVENT_GAUNTLETREWARD;
+				}
+			}
+
+			//aibsmod - check for Rocket Arena air combos
+			if (g_gametype.integer == GT_ROCKETARENA && (self->rocketHits > 1)) {
+				//play "humiliation" on player
+				attacker->client->ps.persistant[PERS_GAUNTLET_FRAG_COUNT] += (self->rocketHits - 1);
+
+				//add the sprite over the player's head
 				attacker->client->ps.eFlags &= ~(EF_AWARD_IMPRESSIVE | EF_AWARD_EXCELLENT | EF_AWARD_GAUNTLET | EF_AWARD_ASSIST | EF_AWARD_DEFEND | EF_AWARD_CAP );
 				attacker->client->ps.eFlags |= EF_AWARD_GAUNTLET;
 				attacker->client->rewardTime = level.time + REWARD_SPRITE_TIME;
 
-				// also play humiliation on target
-				self->client->ps.persistant[PERS_PLAYEREVENTS] ^= PLAYEREVENT_GAUNTLETREWARD;
+				//send combo event
+				ent = G_TempEntity(attacker->r.currentOrigin, EV_ROCKETARENA_COMBO);
+				ent->s.eventParm = self->rocketHits;
+				ent->s.otherEntityNum = self->s.number;
+				ent->s.otherEntityNum2 = killer;
+				ent->r.svFlags = SVF_BROADCAST;	//send to everyone
 			}
 
 			// check for two kills in a short amount of time
 			// if this is close enough to the last kill, give a reward sound
-			if ( level.time - attacker->client->lastKillTime < CARNAGE_REWARD_TIME ) {
-				// play excellent on player
-				attacker->client->ps.persistant[PERS_EXCELLENT_COUNT]++;
+			//aibsmod - no "excellent" in Rocket Arena
+			if (g_gametype.integer != GT_ROCKETARENA) {
+				if ( level.time - attacker->client->lastKillTime < CARNAGE_REWARD_TIME ) {
+					// play excellent on player
+					attacker->client->ps.persistant[PERS_EXCELLENT_COUNT]++;
 
-				// add the sprite over the player's head
-				attacker->client->ps.eFlags &= ~(EF_AWARD_IMPRESSIVE | EF_AWARD_EXCELLENT | EF_AWARD_GAUNTLET | EF_AWARD_ASSIST | EF_AWARD_DEFEND | EF_AWARD_CAP );
-				attacker->client->ps.eFlags |= EF_AWARD_EXCELLENT;
-				attacker->client->rewardTime = level.time + REWARD_SPRITE_TIME;
+					// add the sprite over the player's head
+					attacker->client->ps.eFlags &= ~(EF_AWARD_IMPRESSIVE | EF_AWARD_EXCELLENT | EF_AWARD_GAUNTLET | EF_AWARD_ASSIST | EF_AWARD_DEFEND | EF_AWARD_CAP );
+					attacker->client->ps.eFlags |= EF_AWARD_EXCELLENT;
+					attacker->client->rewardTime = level.time + REWARD_SPRITE_TIME;
+				}
 			}
 			attacker->client->lastKillTime = level.time;
 
 		}
 	} else {
-		AddScore( self, self->r.currentOrigin, -1 );
+		if (g_gametype.integer == GT_ROCKETARENA) { //no world kills in Rocket Arena
+		} else {
+			AddScore( self, self->r.currentOrigin, -1 );
+		}
 	}
 
 	// Add team bonuses
@@ -561,13 +624,17 @@ void player_die( gentity_t *self, gentity_t *inflictor, gentity_t *attacker, int
 		}
 	}
 
-	TossClientItems( self );
+	//aibsmod - don't drop anything in Rocket Arena
+	if (g_gametype.integer != GT_ROCKETARENA) {
+
+		TossClientItems( self );
 #ifdef MISSIONPACK
-	TossClientPersistantPowerups( self );
-	if( g_gametype.integer == GT_HARVESTER ) {
-		TossClientCubes( self );
-	}
+		TossClientPersistantPowerups( self );
+		if( g_gametype.integer == GT_HARVESTER ) {
+			TossClientCubes( self );
+		}
 #endif
+	}
 
 	Cmd_Score_f( self );		// show scores
 	// send updated scores to any clients that are following this one,
@@ -639,9 +706,9 @@ void player_die( gentity_t *self, gentity_t *inflictor, gentity_t *attacker, int
 			self->health = GIB_HEALTH+1;
 		}
 
-		self->client->ps.legsAnim = 
+		self->client->ps.legsAnim =
 			( ( self->client->ps.legsAnim & ANIM_TOGGLEBIT ) ^ ANIM_TOGGLEBIT ) | anim;
-		self->client->ps.torsoAnim = 
+		self->client->ps.torsoAnim =
 			( ( self->client->ps.torsoAnim & ANIM_TOGGLEBIT ) ^ ANIM_TOGGLEBIT ) | anim;
 
 		G_AddEvent( self, EV_DEATH1 + i, killer );
@@ -657,6 +724,14 @@ void player_die( gentity_t *self, gentity_t *inflictor, gentity_t *attacker, int
 			Kamikaze_DeathTimer( self );
 		}
 #endif
+	}
+
+	if (level.rambo == self) { //aibsmod - Rambo died
+		switch_rambo(self, self->client->lastAttacker);
+	}
+
+	if (level.ballCarrier == self) { //aibsmod - ball carrier died
+		football_drop(level.football, self, NULL, attacker);
 	}
 
 	trap_LinkEntity (self);
@@ -837,6 +912,12 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 		attacker = &g_entities[ENTITYNUM_WORLD];
 	}
 
+	//aibsmod - am_nonRamboKill 0 only allows rambo<->player damage and self damage
+	if ((g_gametype.integer == GT_RAMBO) || (g_gametype.integer == GT_RAMBO_TEAM)) {
+		if ((am_nonRamboKill.integer == 0) && attacker->client && targ->client && (attacker!=targ) && (level.rambo!=attacker) && (level.rambo!=targ))
+			return;
+	}
+
 	// shootable doors / buttons don't actually have any health
 	if ( targ->s.eType == ET_MOVER ) {
 		if ( targ->use && targ->moverState == MOVER_POS1 ) {
@@ -859,6 +940,11 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 		}
 #endif
 		damage = damage * max / 100;
+	}
+
+	//aibsmod - set last attacker
+	if (attacker->client && targ->client && (attacker != targ) && (!OnSameTeam(attacker, targ))) {
+		targ->client->lastAttacker = attacker;
 	}
 
 	client = targ->client;
@@ -893,8 +979,34 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 
 		mass = 200;
 
-		VectorScale (dir, g_knockback.value * (float)knockback / mass, kvel);
-		VectorAdd (targ->client->ps.velocity, kvel, targ->client->ps.velocity);
+		if ((g_gametype.integer == GT_ROCKETARENA) &&
+			(mod == MOD_ROCKET || mod == MOD_ROCKET_SPLASH) &&
+			((targ->s.groundEntityNum != ENTITYNUM_NONE) || targ->waterlevel) &&
+			am_rocketArena_groundLaunch.integer)
+		{
+			float spreadAngle;
+			float spreadStrength;
+
+			spreadAngle = random() * 2.0f * M_PI; //any random direction
+			spreadStrength = 0.25f + (random() * 0.25f); //.25 ~ .5
+
+			VectorSet(kvel,
+				sin(spreadAngle) * spreadStrength * am_rocketArena_groundLaunch.integer,
+				cos(spreadAngle) * spreadStrength * am_rocketArena_groundLaunch.integer,
+				am_rocketArena_groundLaunch.integer
+			);
+
+//			VectorAdd(targ->client->ps.velocity, kvel, targ->client->ps.velocity);
+		} else {
+			VectorScale (dir, g_knockback.value * (float)knockback / mass, kvel);
+//			VectorAdd (targ->client->ps.velocity, kvel, targ->client->ps.velocity);
+		}
+
+		if (targ->s.eType == ET_CLONE) { //clones will have the knockback added to themselves, not the client
+			VectorAdd(targ->s.pos.trDelta, kvel, targ->s.pos.trDelta);
+		} else {
+			VectorAdd(targ->client->ps.velocity, kvel, targ->client->ps.velocity);
+		}
 
 		// set the timer so that the other client can't cancel
 		// out the movement immediately
@@ -920,8 +1032,10 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 		// if the attacker was on the same team
 #ifdef MISSIONPACK
 		if ( mod != MOD_JUICED && targ != attacker && !(dflags & DAMAGE_NO_TEAM_PROTECTION) && OnSameTeam (targ, attacker)  ) {
-#else	
-		if ( targ != attacker && OnSameTeam (targ, attacker)  ) {
+#else
+		//aibsmod - tripmine does friendly damage
+		if ( mod != MOD_TRIPMINE_SPLASH && targ != attacker && OnSameTeam (targ, attacker)  ) {
+//		if ( targ != attacker && OnSameTeam (targ, attacker)  ) {
 #endif
 			if ( !g_friendlyFire.integer ) {
 				return;
@@ -964,18 +1078,59 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 		} else {
 			attacker->client->ps.persistant[PERS_HITS]++;
 		}
-		attacker->client->ps.persistant[PERS_ATTACKEE_ARMOR] = (targ->health<<8)|(client->ps.stats[STAT_ARMOR]);
+		attacker->client->ps.persistant[PERS_ATTACKEE_ARMOR] = damage;
+//		attacker->client->ps.persistant[PERS_ATTACKEE_ARMOR] = (targ->health<<8)|(client->ps.stats[STAT_ARMOR]);
 	}
 
 	// always give half damage if hurting self
 	// calculated after knockback, so rocket jumping works
-	if ( targ == attacker) {
+	//aibsmod - no such luck for the tripmine!
+	if ((targ == attacker) && (mod != MOD_TRIPMINE_SPLASH)) {
 		damage *= 0.5;
+	}
+
+	//aibsmod - also half damage if rambo
+	if (g_gametype.integer == GT_RAMBO || g_gametype.integer == GT_RAMBO_TEAM) {
+		if (targ->client && targ->client->ps.powerups[PW_CARRIER])
+			damage *= 0.5;
 	}
 
 	if ( damage < 1 ) {
 		damage = 1;
 	}
+
+	//aibsmod - am_selfDamage 0 doesn't allow self damage
+	if ((am_selfDamage.integer == 0) && (targ == attacker)) {
+		damage = 0;
+	}
+
+	//aibsmod - am_fallDamage 0 doesn't allow fall damage
+	if ((am_fallDamage.integer == 0) && (mod == MOD_FALLING)) {
+		damage = 0;
+	}
+
+	//aibsmod - only allow direct rocket and grenade hits in Rocket Arena
+	if (g_gametype.integer == GT_ROCKETARENA) {
+		if (!(dflags & DAMAGE_NO_PROTECTION)) {
+			if ((mod == MOD_ROCKET) || (mod == MOD_GRENADE)) {
+				if (targ && targ->client && attacker && attacker->client && targ->health > 0) {
+					ra_register_hit(attacker, inflictor, targ);
+					attacker->client->ps.persistant[PERS_ATTACKEE_ARMOR] = 100;
+				}
+			}
+
+			damage = 0;
+		}
+	}
+
+	//aibsmod - in training mode, don't allow any protectable damage or telefragging (to players)
+	if (am_trainingMode.integer && targ->client && ((mod == MOD_TELEFRAG) || !(dflags & DAMAGE_NO_PROTECTION)))
+		damage = 0;
+
+	//aibsmod - no gauntlet damage in Football (only knockback)
+	if (mod == MOD_GAUNTLET && g_gametype.integer == GT_FOOTBALL)
+		damage = 0;
+
 	take = damage;
 
 	// save some from armor
@@ -991,10 +1146,12 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 	// the total will be turned into screen blends and view angle kicks
 	// at the end of the frame
 	if ( client ) {
-		if ( attacker ) {
-			client->ps.persistant[PERS_ATTACKER] = attacker->s.number;
-		} else {
-			client->ps.persistant[PERS_ATTACKER] = ENTITYNUM_WORLD;
+		if (g_gametype.integer != GT_ROCKETARENA) { //aibsmod - Rocket Arena will set last attacker in ra_register_hit
+			if ( attacker ) {
+				client->ps.persistant[PERS_ATTACKER] = attacker->s.number;
+			} else {
+				client->ps.persistant[PERS_ATTACKER] = ENTITYNUM_WORLD;
+			}
 		}
 		client->damage_armor += asave;
 		client->damage_blood += take;
@@ -1011,7 +1168,7 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 	// See if it's the player hurting the emeny flag carrier
 #ifdef MISSIONPACK
 	if( g_gametype.integer == GT_CTF || g_gametype.integer == GT_1FCTF ) {
-#else	
+#else
 	if( g_gametype.integer == GT_CTF) {
 #endif
 		Team_CheckHurtCarrier(targ, attacker);
@@ -1029,7 +1186,7 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 		if ( targ->client ) {
 			targ->client->ps.stats[STAT_HEALTH] = targ->health;
 		}
-			
+
 		if ( targ->health <= 0 ) {
 			if ( client )
 				targ->flags |= FL_NO_KNOCKBACK;
@@ -1074,7 +1231,7 @@ qboolean CanDamage (gentity_t *targ, vec3_t origin) {
 	if (tr.fraction == 1.0 || tr.entityNum == targ->s.number)
 		return qtrue;
 
-	// this should probably check in the plane of projection, 
+	// this should probably check in the plane of projection,
 	// rather than in world coordinate
 	VectorCopy(midpoint, dest);
 	dest[0] += offsetmaxs[0];

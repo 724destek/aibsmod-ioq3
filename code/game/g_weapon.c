@@ -20,7 +20,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 //
-// g_weapon.c 
+// g_weapon.c
 // perform the server side effects of a weapon firing
 
 #include "g_local.h"
@@ -91,6 +91,12 @@ qboolean CheckGauntletAttack( gentity_t *ent ) {
 
 	traceEnt = &g_entities[ tr.entityNum ];
 
+	//aibsmod - check if we can steal the football
+	if (traceEnt->client && traceEnt == level.ballCarrier) {
+		football_steal(ent);
+		return qfalse;
+	}
+
 	// send blood impact
 	if ( traceEnt->takedamage && traceEnt->client ) {
 		tent = G_TempEntity( tr.endpos, EV_MISSILE_HIT );
@@ -115,7 +121,12 @@ qboolean CheckGauntletAttack( gentity_t *ent ) {
 	}
 #endif
 
-	damage = 50 * s_quadFactor;
+	//rambo in rambomatch and everyone in am_hyperGauntlet 1 do instant-kill damage
+	if (am_hyperGauntlet.integer || ((g_gametype.integer == GT_RAMBO || g_gametype.integer == GT_RAMBO_TEAM) && ent->client->ps.powerups[PW_CARRIER]))
+		damage = 1000;
+	else
+		damage = 50 * s_quadFactor;
+
 	G_Damage( traceEnt, ent, ent, forward, tr.endpos,
 		damage, 0, MOD_GAUNTLET );
 
@@ -137,7 +148,7 @@ SnapVectorTowards
 
 Round a vector to integers for more efficient network
 transmission, but make sure that it rounds towards a given point
-rather than blindly truncating.  This prevents it from truncating 
+rather than blindly truncating.  This prevents it from truncating
 into a wall.
 ======================
 */
@@ -448,21 +459,45 @@ void weapon_railgun_fire (gentity_t *ent) {
 	int			unlinked;
 	int			passent;
 	gentity_t	*unlinkedEntities[MAX_RAIL_HITS];
+	vec3_t		traceResume;
+	qboolean	piercingHit;
 
 	damage = 100 * s_quadFactor;
 
 	VectorMA (muzzle, 8192, forward, end);
+	VectorCopy(muzzle, traceResume);
 
 	// trace only against the solids, so the railgun will go through people
 	unlinked = 0;
 	hits = 0;
 	passent = ent->s.number;
+	piercingHit = qfalse;
 	do {
-		trap_Trace (&trace, muzzle, NULL, NULL, end, passent, MASK_SHOT );
+		trap_Trace (&trace, traceResume, NULL, NULL, end, ent->s.number, MASK_SHOT );
 		if ( trace.entityNum >= ENTITYNUM_MAX_NORMAL ) {
-			break;
+			//break if piercing is disabled
+			if (!am_piercingRail.integer)
+				break;
+
+			//break if we hit the sky
+			if (trace.surfaceFlags & SURF_SKY)
+				break;
+
+			//break if we traversed length of vector tracefrom
+			if (trace.fraction == 1.0)
+				break;
+
+			//otherwise continue tracing through walls
+			VectorMA(trace.endpos, 1, forward, traceResume);
+			piercingHit = qtrue;
+			continue;
 		}
+
 		traceEnt = &g_entities[ trace.entityNum ];
+
+		if (!am_piercingRail.integer && traceEnt->s.eType == ET_FOOTBALL_SOLID)
+			break;
+
 		if ( traceEnt->takedamage ) {
 #ifdef MISSIONPACK
 			if ( traceEnt->client && traceEnt->client->invulnerabilityTime > level.time ) {
@@ -495,7 +530,12 @@ void weapon_railgun_fire (gentity_t *ent) {
 				if( LogAccuracyHit( traceEnt, ent ) ) {
 					hits++;
 				}
-				G_Damage (traceEnt, ent, ent, forward, trace.endpos, damage, 0, MOD_RAILGUN);
+
+				//aibsmod - piercing hits have a different MOD
+				if (piercingHit)
+					G_Damage (traceEnt, ent, ent, forward, trace.endpos, damage, 0, MOD_RAILGUN_PIERCE);
+				else
+					G_Damage (traceEnt, ent, ent, forward, trace.endpos, damage, 0, MOD_RAILGUN);
 #endif
 		}
 		if ( trace.contents & CONTENTS_SOLID ) {
@@ -536,6 +576,9 @@ void weapon_railgun_fire (gentity_t *ent) {
 	}
 	tent->s.clientNum = ent->s.clientNum;
 
+	//aibsmod - send the effect to everyone since it tunnels through walls
+	tent->r.svFlags |= SVF_BROADCAST;
+
 	// give the shooter a reward sound if they have made two railgun hits in a row
 	if ( hits == 0 ) {
 		// complete miss
@@ -545,11 +588,14 @@ void weapon_railgun_fire (gentity_t *ent) {
 		ent->client->accurateCount += hits;
 		if ( ent->client->accurateCount >= 2 ) {
 			ent->client->accurateCount -= 2;
-			ent->client->ps.persistant[PERS_IMPRESSIVE_COUNT]++;
-			// add the sprite over the player's head
-			ent->client->ps.eFlags &= ~(EF_AWARD_IMPRESSIVE | EF_AWARD_EXCELLENT | EF_AWARD_GAUNTLET | EF_AWARD_ASSIST | EF_AWARD_DEFEND | EF_AWARD_CAP );
-			ent->client->ps.eFlags |= EF_AWARD_IMPRESSIVE;
-			ent->client->rewardTime = level.time + REWARD_SPRITE_TIME;
+			//aibsmod - no "impressive" in Rocket Arena
+			if (g_gametype.integer != GT_ROCKETARENA) {
+				ent->client->ps.persistant[PERS_IMPRESSIVE_COUNT]++;
+				// add the sprite over the player's head
+				ent->client->ps.eFlags &= ~(EF_AWARD_IMPRESSIVE | EF_AWARD_EXCELLENT | EF_AWARD_GAUNTLET | EF_AWARD_ASSIST | EF_AWARD_DEFEND | EF_AWARD_CAP );
+				ent->client->ps.eFlags |= EF_AWARD_IMPRESSIVE;
+				ent->client->rewardTime = level.time + REWARD_SPRITE_TIME;
+			}
 		}
 		ent->client->accuracy_hits++;
 	}
@@ -841,7 +887,7 @@ void FireWeapon( gentity_t *ent ) {
 		weapon_supershotgun_fire( ent );
 		break;
 	case WP_MACHINEGUN:
-		if ( g_gametype.integer != GT_TEAM ) {
+		if ((g_gametype.integer != GT_TEAM) && (g_gametype.integer != GT_RAMBO_TEAM)) {
 			Bullet_Fire( ent, MACHINEGUN_SPREAD, MACHINEGUN_DAMAGE, MOD_MACHINEGUN );
 		} else {
 			Bullet_Fire( ent, MACHINEGUN_SPREAD, MACHINEGUN_TEAM_DAMAGE, MOD_MACHINEGUN );
@@ -860,7 +906,11 @@ void FireWeapon( gentity_t *ent ) {
 		weapon_railgun_fire( ent );
 		break;
 	case WP_BFG:
-		BFG_Fire( ent );
+		if (am_redeemerBFG.integer) {
+			Redeemer_Fire(ent);
+		} else {
+			BFG_Fire( ent );
+		}
 		break;
 	case WP_GRAPPLING_HOOK:
 		Weapon_GrapplingHook_Fire( ent );

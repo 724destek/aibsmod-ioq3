@@ -76,8 +76,11 @@ void P_DamageFeedback( gentity_t *player ) {
 		client->ps.damageEvent++;
 	}
 
-
-	client->ps.damageCount = count;
+	//aibsmod - no view angle kick if am_damageKick is 0
+	if (am_damageKick.integer)
+		client->ps.damageCount = count;
+	else
+		client->ps.damageCount = 0;
 
 	//
 	// clear totals
@@ -131,7 +134,7 @@ void P_WorldEffects( gentity_t *ent ) {
 				// don't play a normal pain sound
 				ent->pain_debounce_time = level.time + 200;
 
-				G_Damage (ent, NULL, NULL, NULL, NULL, 
+				G_Damage (ent, NULL, NULL, NULL, NULL,
 					ent->damage, DAMAGE_NO_ARMOR, MOD_WATER);
 			}
 		}
@@ -143,7 +146,7 @@ void P_WorldEffects( gentity_t *ent ) {
 	//
 	// check for sizzle damage (move to pmove?)
 	//
-	if (waterlevel && 
+	if (waterlevel &&
 		(ent->watertype&(CONTENTS_LAVA|CONTENTS_SLIME)) ) {
 		if (ent->health > 0
 			&& ent->pain_debounce_time <= level.time	) {
@@ -152,12 +155,12 @@ void P_WorldEffects( gentity_t *ent ) {
 				G_AddEvent( ent, EV_POWERUP_BATTLESUIT, 0 );
 			} else {
 				if (ent->watertype & CONTENTS_LAVA) {
-					G_Damage (ent, NULL, NULL, NULL, NULL, 
+					G_Damage (ent, NULL, NULL, NULL, NULL,
 						30*waterlevel, 0, MOD_LAVA);
 				}
 
 				if (ent->watertype & CONTENTS_SLIME) {
-					G_Damage (ent, NULL, NULL, NULL, NULL, 
+					G_Damage (ent, NULL, NULL, NULL, NULL,
 						10*waterlevel, 0, MOD_SLIME);
 				}
 			}
@@ -353,9 +356,30 @@ void SpectatorThink( gentity_t *ent, usercmd_t *ucmd ) {
 	client->oldbuttons = client->buttons;
 	client->buttons = ucmd->buttons;
 
-	// attack button cycles through spectators
-	if ( ( client->buttons & BUTTON_ATTACK ) && ! ( client->oldbuttons & BUTTON_ATTACK ) ) {
-		Cmd_FollowCycle_f( ent, 1 );
+//	// attack button cycles through spectators
+//	if ( ( client->buttons & BUTTON_ATTACK ) && ! ( client->oldbuttons & BUTTON_ATTACK ) ) {
+//		Cmd_FollowCycle_f( ent, 1 );
+//	}
+
+	//aibsmod - left/right cycle through spectators
+	if (client->sess.spectatorState == SPECTATOR_FOLLOW) {
+		if ((ucmd->rightmove == 0) && (client->lastFollowDirection != 0)) {
+			client->lastFollowDirection = 0;
+		} if ((ucmd->rightmove > 0) && (client->lastFollowDirection != 1)) {
+			Cmd_FollowCycle_f(ent, 1);
+			client->lastFollowDirection = 1;
+		} else if ((ucmd->rightmove < 0) && (client->lastFollowDirection != -1)) {
+			Cmd_FollowCycle_f(ent, -1);
+			client->lastFollowDirection = -1;
+		}
+	}
+
+	//aibsmod - attack toggles follow
+	if ((client->buttons & BUTTON_ATTACK) && !(client->oldbuttons & BUTTON_ATTACK)) {
+		if (client->sess.spectatorState == SPECTATOR_FOLLOW)
+			StopFollowing(ent);
+		else
+			Cmd_FollowCycle_f(ent, 1);
 	}
 }
 
@@ -374,8 +398,8 @@ qboolean ClientInactivityTimer( gclient_t *client ) {
 		// gameplay, everyone isn't kicked
 		client->inactivityTime = level.time + 60 * 1000;
 		client->inactivityWarning = qfalse;
-	} else if ( client->pers.cmd.forwardmove || 
-		client->pers.cmd.rightmove || 
+	} else if ( client->pers.cmd.forwardmove ||
+		client->pers.cmd.rightmove ||
 		client->pers.cmd.upmove ||
 		(client->pers.cmd.buttons & BUTTON_ATTACK) ) {
 		client->inactivityTime = level.time + g_inactivity.integer * 1000;
@@ -456,13 +480,15 @@ void ClientTimerActions( gentity_t *ent, int msec ) {
 		} else {
 			// count down health when over max
 			if ( ent->health > client->ps.stats[STAT_MAX_HEALTH] ) {
-				ent->health--;
+				if (!(((g_gametype.integer == GT_RAMBO) || (g_gametype.integer == GT_RAMBO_TEAM)) && client->ps.powerups[PW_CARRIER])) //doesn't apply to rambo
+					ent->health--;
 			}
 		}
 
 		// count down armor when over max
 		if ( client->ps.stats[STAT_ARMOR] > client->ps.stats[STAT_MAX_HEALTH] ) {
-			client->ps.stats[STAT_ARMOR]--;
+			if (!(((g_gametype.integer == GT_RAMBO) || (g_gametype.integer == GT_RAMBO_TEAM)) && client->ps.powerups[PW_CARRIER])) //doesn't apply to rambo
+				client->ps.stats[STAT_ARMOR]--;
 		}
 	}
 #ifdef MISSIONPACK
@@ -653,6 +679,13 @@ void ClientEvents( gentity_t *ent, int oldEventSequence ) {
 			break;
 #endif
 
+		//aibsmod
+		case EV_TRIPMINE_FIRE:	//client firing tripmine
+			if (am_tripmineGrenades.integer && ((ent->client->ps.ammo[WP_GRENADE_LAUNCHER] == -1) || (ent->client->ps.ammo[WP_GRENADE_LAUNCHER] >= 5)) && CheckTripmineAttack(ent))
+				if (ent->client->ps.ammo[WP_GRENADE_LAUNCHER] != -1)
+					ent->client->ps.ammo[WP_GRENADE_LAUNCHER] -= 5;
+			break;
+
 		default:
 			break;
 		}
@@ -757,6 +790,7 @@ void ClientThink_real( gentity_t *ent ) {
 	int			oldEventSequence;
 	int			msec;
 	usercmd_t	*ucmd;
+	vec3_t		forward, right, up; //used to shoot the football
 
 	client = ent->client;
 
@@ -775,7 +809,7 @@ void ClientThink_real( gentity_t *ent ) {
 	if ( ucmd->serverTime < level.time - 1000 ) {
 		ucmd->serverTime = level.time - 1000;
 //		G_Printf("serverTime >>>>>\n" );
-	} 
+	}
 
 	msec = ucmd->serverTime - client->ps.commandTime;
 	// following others may result in bad times, but we still want
@@ -829,7 +863,10 @@ void ClientThink_real( gentity_t *ent ) {
 		client->ps.eFlags &= ~(EF_AWARD_IMPRESSIVE | EF_AWARD_EXCELLENT | EF_AWARD_GAUNTLET | EF_AWARD_ASSIST | EF_AWARD_DEFEND | EF_AWARD_CAP );
 	}
 
-	if ( client->noclip ) {
+	//aibsmod
+	if (ent->redeeming == 1) {
+		client->ps.pm_type = PM_REDEEMER;
+	} else if ( client->noclip ) {
 		client->ps.pm_type = PM_NOCLIP;
 	} else if ( client->ps.stats[STAT_HEALTH] <= 0 ) {
 		client->ps.pm_type = PM_DEAD;
@@ -866,8 +903,14 @@ void ClientThink_real( gentity_t *ent ) {
 	// check for the hit-scan gauntlet, don't let the action
 	// go through as an attack unless it actually hits something
 	if ( client->ps.weapon == WP_GAUNTLET && !( ucmd->buttons & BUTTON_TALK ) &&
-		( ucmd->buttons & BUTTON_ATTACK ) && client->ps.weaponTime <= 0 ) {
-		pm.gauntletHit = CheckGauntletAttack( ent );
+		( ucmd->buttons & BUTTON_ATTACK ) && client->ps.weaponTime <= 0 && !(client->ps.pm_flags & PMF_GOTFOOTBALL) ) {
+		//aibsmod - shoot the football if we're carrying it
+		if (g_gametype.integer == GT_FOOTBALL && client->ps.powerups[PW_CARRIER]) {
+			AngleVectors(client->ps.viewangles, forward, right, up);
+			football_shoot(level.football, ent, forward);
+		} else {
+			pm.gauntletHit = CheckGauntletAttack( ent );
+		}
 	}
 
 	if ( ent->flags & FL_FORCE_GESTURE ) {
@@ -936,10 +979,22 @@ void ClientThink_real( gentity_t *ent ) {
 				ent->client->ps.pm_type = PM_SPINTERMISSION;
 			}
 		}
-		Pmove (&pm);
-#else
-		Pmove (&pm);
 #endif
+
+	//aibsmod - Pmove uses clientnum for collision exceptions
+	if (ent->s.eType == ET_CLONE)
+		pm.ps->clientNum = ent->s.number;
+
+	Pmove (&pm);
+
+	//aibsmod - Pmove uses clientnum for collision exceptions
+	if (ent->s.eType == ET_CLONE)
+		pm.ps->clientNum = ent->s.clientNum;
+
+	//Was controlling a redeemer, check for hits
+	if (ent->redeeming == 1) {
+		Redeemer_Check(ent);
+	}
 
 	// save results of pmove
 	if ( ent->client->ps.eventSequence != oldEventSequence ) {
@@ -955,6 +1010,33 @@ void ClientThink_real( gentity_t *ent ) {
 
 	if ( !( ent->client->ps.eFlags & EF_FIRING ) ) {
 		client->fireHeld = qfalse;		// for grapple
+	}
+
+	//aibsmod - check for air rocketed players hitting the ground
+	if ((ent->s.groundEntityNum != ENTITYNUM_NONE) || ent->waterlevel) {
+		ra_hit_ground(ent);
+	}
+
+	//aibsmod - update buttonsEntity (not on clones)
+	if ((ent->s.eType != ET_CLONE) && client->pers.buttonsEntity) {
+		//update owner (we seem to need this)
+		client->pers.buttonsEntity->s.otherEntityNum = client->ps.clientNum;
+
+		//update position
+		G_SetOrigin(client->pers.buttonsEntity, ent->s.pos.trBase);
+
+		//update buttons
+		G_AddEvent(client->pers.buttonsEntity, EV_CURRENT_BUTTONS,
+			((pm.cmd.forwardmove > 0) ? BTNFLAG_BUTTON_UP : 0) |
+			((pm.cmd.forwardmove < 0) ? BTNFLAG_BUTTON_DOWN : 0) |
+			((pm.cmd.rightmove < 0) ? BTNFLAG_BUTTON_LEFT : 0) |
+			((pm.cmd.rightmove > 0) ? BTNFLAG_BUTTON_RIGHT : 0) |
+			((pm.cmd.upmove > 0) ? BTNFLAG_BUTTON_JUMP : 0) |
+			((pm.cmd.buttons & BUTTON_ATTACK) ? BTNFLAG_BUTTON_FIRE : 0)
+		);
+
+		//link
+		trap_LinkEntity(client->pers.buttonsEntity);
 	}
 
 	// use the snapped origin for linking so it matches client predicted versions
@@ -999,12 +1081,12 @@ void ClientThink_real( gentity_t *ent ) {
 		// wait for the attack button to be pressed
 		if ( level.time > client->respawnTime ) {
 			// forcerespawn is to prevent users from waiting out powerups
-			if ( g_forcerespawn.integer > 0 && 
+			if ( g_forcerespawn.integer > 0 &&
 				( level.time - client->respawnTime ) > g_forcerespawn.integer * 1000 ) {
 				ClientRespawn( ent );
 				return;
 			}
-		
+
 			// pressing attack or use is the normal respawn method
 			if ( ucmd->buttons & ( BUTTON_ATTACK | BUTTON_USE_HOLDABLE ) ) {
 				ClientRespawn( ent );
@@ -1057,6 +1139,7 @@ SpectatorClientEndFrame
 */
 void SpectatorClientEndFrame( gentity_t *ent ) {
 	gclient_t	*cl;
+	int savedPing;
 
 	// if we are doing a chase cam or a remote view, grab the latest info
 	if ( ent->client->sess.spectatorState == SPECTATOR_FOLLOW ) {
@@ -1074,7 +1157,12 @@ void SpectatorClientEndFrame( gentity_t *ent ) {
 			cl = &level.clients[ clientNum ];
 			if ( cl->pers.connected == CON_CONNECTED && cl->sess.sessionTeam != TEAM_SPECTATOR ) {
 				flags = (cl->ps.eFlags & ~(EF_VOTED | EF_TEAMVOTED)) | (ent->client->ps.eFlags & (EF_VOTED | EF_TEAMVOTED));
+
+				//aibsmod - save and restore ping
+				savedPing = ent->client->ps.ping;
 				ent->client->ps = cl->ps;
+				ent->client->ps.ping = savedPing;
+
 				ent->client->ps.pm_flags |= PMF_FOLLOW;
 				ent->client->ps.eFlags = flags;
 				return;
@@ -1165,8 +1253,10 @@ void ClientEndFrame( gentity_t *ent ) {
 
 	// add the EF_CONNECTION flag if we haven't gotten commands recently
 	if ( level.time - ent->client->lastCmdTime > 1000 ) {
+		// ent->s.eFlags |= EF_CONNECTION;
 		ent->client->ps.eFlags |= EF_CONNECTION;
 	} else {
+		// ent->s.eFlags &= ~EF_CONNECTION;
 		ent->client->ps.eFlags &= ~EF_CONNECTION;
 	}
 

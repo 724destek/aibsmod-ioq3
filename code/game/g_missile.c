@@ -284,6 +284,26 @@ void G_MissileImpact( gentity_t *ent, trace_t *trace ) {
 		return;
 	}
 
+	//aibsmod - check for limited bounce
+	if (!other->takedamage && (ent->s.eFlags & EF_BOUNCE_LIMITED) && ent->bounceCount) {
+		if (ent->bounceCount < 0) {
+			ent->bounceCount++;
+			ent->target_ent = ent; //set target_ent so missile will impact owner
+		} else {
+			ent->bounceCount--;
+		}
+
+		if (ent->methodOfDeath == MOD_ROCKET)
+			ent->methodOfDeath = MOD_ROCKET_BOUNCE;
+
+		if (ent->splashMethodOfDeath == MOD_ROCKET_SPLASH)
+			ent->splashMethodOfDeath = MOD_ROCKET_BOUNCE_SPLASH;
+
+		G_BounceMissile(ent, trace);
+		G_AddEvent(ent, EV_GRENADE_BOUNCE, 0);
+		return;
+	}
+
 #ifdef MISSIONPACK
 	if ( other->takedamage ) {
 		if ( ent->s.weapon != WP_PROX_LAUNCHER ) {
@@ -319,7 +339,7 @@ void G_MissileImpact( gentity_t *ent, trace_t *trace ) {
 				velocity[2] = 1;	// stepped on a grenade
 			}
 			G_Damage (other, ent, &g_entities[ent->r.ownerNum], velocity,
-				ent->s.origin, ent->damage, 
+				ent->s.origin, ent->damage,
 				0, ent->methodOfDeath);
 		}
 	}
@@ -331,7 +351,8 @@ void G_MissileImpact( gentity_t *ent, trace_t *trace ) {
 		}
 
 		// if it's a player, stick it on to them (flag them and remove this entity)
-		if( other->s.eType == ET_PLAYER && other->health > 0 ) {
+		//aibsmod - clones work, too
+		if( ((other->s.eType == ET_PLAYER) || (other->s.eType == ET_CLONE)) && other->health > 0 ) {
 			ProximityMine_Player( ent, other );
 			return;
 		}
@@ -429,7 +450,7 @@ void G_MissileImpact( gentity_t *ent, trace_t *trace ) {
 
 	// splash damage (doesn't apply to person directly hit)
 	if ( ent->splashDamage ) {
-		if( G_RadiusDamage( trace->endpos, ent->parent, ent->splashDamage, ent->splashRadius, 
+		if( G_RadiusDamage( trace->endpos, ent->parent, ent->splashDamage, ent->splashRadius,
 			other, ent->splashMethodOfDeath ) ) {
 			if( !hitClient ) {
 				g_entities[ent->r.ownerNum].client->accuracy_hits++;
@@ -550,7 +571,7 @@ gentity_t *fire_plasma (gentity_t *self, vec3_t start, vec3_t dir) {
 	VectorCopy (start, bolt->r.currentOrigin);
 
 	return bolt;
-}	
+}
 
 //=============================================================================
 
@@ -570,6 +591,12 @@ gentity_t *fire_grenade (gentity_t *self, vec3_t start, vec3_t dir) {
 	bolt->nextthink = level.time + 2500;
 	bolt->think = G_ExplodeMissile;
 	bolt->s.eType = ET_MISSILE;
+
+	//aibsmod - Rocket Arena and other stuff
+	bolt->spawnTime = level.time;
+	bolt->ownerVelocity = VectorMagnitude(self->s.pos.trDelta);
+	bolt->jumpTime = self->jumpTime;
+
 	bolt->r.svFlags = SVF_USE_CURRENT_ORIGIN;
 	bolt->s.weapon = WP_GRENADE_LAUNCHER;
 	bolt->s.eFlags = EF_BOUNCE_HALF;
@@ -612,6 +639,16 @@ gentity_t *fire_bfg (gentity_t *self, vec3_t start, vec3_t dir) {
 	bolt->nextthink = level.time + 10000;
 	bolt->think = G_ExplodeMissile;
 	bolt->s.eType = ET_MISSILE;
+
+	//aibsmod - bouncy rockets
+	bolt->s.eFlags = EF_BOUNCE_LIMITED;
+	bolt->bounceCount = am_rocketBounce.integer;
+
+	//aibsmod - Rocket Arena and other stuff
+	bolt->spawnTime = level.time;
+	bolt->ownerVelocity = VectorMagnitude(self->s.pos.trDelta);
+	bolt->jumpTime = self->jumpTime;
+
 	bolt->r.svFlags = SVF_USE_CURRENT_ORIGIN;
 	bolt->s.weapon = WP_BFG;
 	bolt->r.ownerNum = self->s.number;
@@ -759,7 +796,7 @@ gentity_t *fire_nail( gentity_t *self, vec3_t start, vec3_t forward, vec3_t righ
 	VectorCopy( start, bolt->r.currentOrigin );
 
 	return bolt;
-}	
+}
 
 
 /*
