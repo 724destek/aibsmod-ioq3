@@ -147,7 +147,7 @@ void CG_DamageFeedback( int yawByte, int pitchByte, int damage ) {
 		}
 
 		cg.v_dmg_roll = kick * left;
-		
+
 		cg.v_dmg_pitch = -kick * front;
 
 		if ( front <= 0.1 ) {
@@ -298,10 +298,8 @@ CG_CheckLocalSounds
 ==================
 */
 void CG_CheckLocalSounds( playerState_t *ps, playerState_t *ops ) {
-	int			highScore, reward;
-#ifdef MISSIONPACK
-	int			health, armor;
-#endif
+	int			highScore, /*health, armor,*/ reward;
+	int			damage;
 	sfxHandle_t sfx;
 
 	// don't play the sounds if the player just changed teams
@@ -311,9 +309,36 @@ void CG_CheckLocalSounds( playerState_t *ps, playerState_t *ops ) {
 
 	// hit changes
 	if ( ps->persistant[PERS_HITS] > ops->persistant[PERS_HITS] ) {
-#ifdef MISSIONPACK
+		damage = ps->persistant[PERS_ATTACKEE_ARMOR];
+
+		if (am_hitFeedback.integer == 0) {
+			trap_S_StartLocalSound(cgs.media.hitSound, CHAN_LOCAL_SOUND);
+		} else if (am_hitFeedback.integer == 1) {
+			if (damage <= 25) {
+				trap_S_StartLocalSound(cgs.media.hit25Sound, CHAN_LOCAL_SOUND);
+			} else if (damage <= 50) {
+				trap_S_StartLocalSound(cgs.media.hit50Sound, CHAN_LOCAL_SOUND);
+			} else if (damage <= 75) {
+				trap_S_StartLocalSound(cgs.media.hit75Sound, CHAN_LOCAL_SOUND);
+			} else {
+				trap_S_StartLocalSound(cgs.media.hit100Sound, CHAN_LOCAL_SOUND);
+			}
+		} else if (am_hitFeedback.integer == 2) {
+			if (damage < 20) {
+				trap_S_StartLocalSound(cgs.media.hit1Sound, CHAN_LOCAL_SOUND);
+			} else if (damage < 50) {
+				trap_S_StartLocalSound(cgs.media.hit2Sound, CHAN_LOCAL_SOUND);
+			} else if (damage < 100) {
+				trap_S_StartLocalSound(cgs.media.hit3Sound, CHAN_LOCAL_SOUND);
+			} else {
+				trap_S_StartLocalSound(cgs.media.hit4Sound, CHAN_LOCAL_SOUND);
+			}
+		}
+/*
 		armor  = ps->persistant[PERS_ATTACKEE_ARMOR] & 0xff;
 		health = ps->persistant[PERS_ATTACKEE_ARMOR] >> 8;
+
+#ifdef MISSIONPACK
 		if (armor > 50 ) {
 			trap_S_StartLocalSound( cgs.media.hitSoundHighArmor, CHAN_LOCAL_SOUND );
 		} else if (armor || health > 100) {
@@ -324,6 +349,7 @@ void CG_CheckLocalSounds( playerState_t *ps, playerState_t *ops ) {
 #else
 		trap_S_StartLocalSound( cgs.media.hitSound, CHAN_LOCAL_SOUND );
 #endif
+*/
 	} else if ( ps->persistant[PERS_HITS] < ops->persistant[PERS_HITS] ) {
 		trap_S_StartLocalSound( cgs.media.hitTeamSound, CHAN_LOCAL_SOUND );
 	}
@@ -349,44 +375,59 @@ void CG_CheckLocalSounds( playerState_t *ps, playerState_t *ops ) {
 		//Com_Printf("capture\n");
 	}
 	if (ps->persistant[PERS_IMPRESSIVE_COUNT] != ops->persistant[PERS_IMPRESSIVE_COUNT]) {
-#ifdef MISSIONPACK
-		if (ps->persistant[PERS_IMPRESSIVE_COUNT] == 1) {
-			sfx = cgs.media.firstImpressiveSound;
+		if (cgs.gametype == GT_ROCKETARENA) {
+			sfx = cgs.media.airGrenadeSound;
+			pushReward(sfx, cgs.media.medalAirGrenade, ps->persistant[PERS_IMPRESSIVE_COUNT]);
 		} else {
-			sfx = cgs.media.impressiveSound;
-		}
+#ifdef MISSIONPACK
+			if (ps->persistant[PERS_IMPRESSIVE_COUNT] == 1) {
+				sfx = cgs.media.firstImpressiveSound;
+			} else {
+				sfx = cgs.media.impressiveSound;
+			}
 #else
-		sfx = cgs.media.impressiveSound;
+			sfx = cgs.media.impressiveSound;
 #endif
-		pushReward(sfx, cgs.media.medalImpressive, ps->persistant[PERS_IMPRESSIVE_COUNT]);
+			pushReward(sfx, cgs.media.medalImpressive, ps->persistant[PERS_IMPRESSIVE_COUNT]);
+		}
 		reward = qtrue;
 		//Com_Printf("impressive\n");
 	}
 	if (ps->persistant[PERS_EXCELLENT_COUNT] != ops->persistant[PERS_EXCELLENT_COUNT]) {
-#ifdef MISSIONPACK
-		if (ps->persistant[PERS_EXCELLENT_COUNT] == 1) {
-			sfx = cgs.media.firstExcellentSound;
+		if (cgs.gametype == GT_ROCKETARENA) {
+			sfx = cgs.media.airRocketSound;
+			pushReward(sfx, cgs.media.medalAirRocket, ps->persistant[PERS_EXCELLENT_COUNT]);
 		} else {
-			sfx = cgs.media.excellentSound;
-		}
+#ifdef MISSIONPACK
+			if (ps->persistant[PERS_EXCELLENT_COUNT] == 1) {
+				sfx = cgs.media.firstExcellentSound;
+			} else {
+				sfx = cgs.media.excellentSound;
+			}
 #else
-		sfx = cgs.media.excellentSound;
+			sfx = cgs.media.excellentSound;
 #endif
-		pushReward(sfx, cgs.media.medalExcellent, ps->persistant[PERS_EXCELLENT_COUNT]);
+			pushReward(sfx, cgs.media.medalExcellent, ps->persistant[PERS_EXCELLENT_COUNT]);
+		}
 		reward = qtrue;
 		//Com_Printf("excellent\n");
 	}
 	if (ps->persistant[PERS_GAUNTLET_FRAG_COUNT] != ops->persistant[PERS_GAUNTLET_FRAG_COUNT]) {
-#ifdef MISSIONPACK
-		if (ps->persistant[PERS_GAUNTLET_FRAG_COUNT] == 1) {
-			sfx = cgs.media.firstHumiliationSound;
+		if (cgs.gametype == GT_ROCKETARENA) {
+			sfx = cgs.media.airComboSound;
+			pushReward(sfx, cgs.media.medalAirCombo, ps->persistant[PERS_GAUNTLET_FRAG_COUNT]);
 		} else {
-			sfx = cgs.media.humiliationSound;
-		}
+#ifdef MISSIONPACK
+			if (ps->persistant[PERS_GAUNTLET_FRAG_COUNT] == 1) {
+				sfx = cgs.media.firstHumiliationSound;
+			} else {
+				sfx = cgs.media.humiliationSound;
+			}
 #else
-		sfx = cgs.media.humiliationSound;
+			sfx = cgs.media.humiliationSound;
 #endif
-		pushReward(sfx, cgs.media.medalGauntlet, ps->persistant[PERS_GAUNTLET_FRAG_COUNT]);
+			pushReward(sfx, cgs.media.medalGauntlet, ps->persistant[PERS_GAUNTLET_FRAG_COUNT]);
+		}
 		reward = qtrue;
 		//Com_Printf("gauntlet frag\n");
 	}
@@ -517,7 +558,7 @@ void CG_TransitionPlayerState( playerState_t *ps, playerState_t *ops ) {
 		cg.mapRestart = qfalse;
 	}
 
-	if ( cg.snap->ps.pm_type != PM_INTERMISSION 
+	if ( cg.snap->ps.pm_type != PM_INTERMISSION
 		&& ps->persistant[PERS_TEAM] != TEAM_SPECTATOR ) {
 		CG_CheckLocalSounds( ps, ops );
 	}

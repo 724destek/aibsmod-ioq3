@@ -212,47 +212,68 @@ static void CG_NailgunEjectBrass( centity_t *cent ) {
 CG_RailTrail
 ==========================
 */
-void CG_RailTrail (clientInfo_t *ci, vec3_t start, vec3_t end) {
+//aibsmod - modified to take clientNum instead of clientInfo*
+//also modified so piercing rails (of length <=8192) don't dry out the LocalEntities pool
+void CG_RailTrail (int clientNum, vec3_t start, vec3_t end) {
 	vec3_t axis[36], move, move2, vec, temp;
 	float  len;
 	int    i, j, skip;
- 
+	int		totalDots;
+
 	localEntity_t *le;
 	refEntity_t   *re;
- 
+
+	clientInfo_t *ci;
+
+	ci = &cgs.clientinfo[clientNum];
+
 #define RADIUS   4
 #define ROTATION 1
 #define SPACING  5
- 
+#define MAX_DOTS 128
+
 	start[2] -= 4;
- 
+
 	le = CG_AllocLocalEntity();
 	re = &le->refEntity;
- 
+
 	le->leType = LE_FADE_RGB;
 	le->startTime = cg.time;
 	le->endTime = cg.time + cg_railTrailTime.value;
 	le->lifeRate = 1.0 / (le->endTime - le->startTime);
- 
+
 	re->shaderTime = cg.time / 1000.0f;
 	re->reType = RT_RAIL_CORE;
 	re->customShader = cgs.media.railCoreShader;
- 
+
 	VectorCopy(start, re->origin);
 	VectorCopy(end, re->oldorigin);
- 
-	re->shaderRGBA[0] = ci->color1[0] * 255;
-	re->shaderRGBA[1] = ci->color1[1] * 255;
-	re->shaderRGBA[2] = ci->color1[2] * 255;
-	re->shaderRGBA[3] = 255;
 
-	le->color[0] = ci->color1[0] * 0.75;
-	le->color[1] = ci->color1[1] * 0.75;
-	le->color[2] = ci->color1[2] * 0.75;
-	le->color[3] = 1.0f;
+	//aibsmod - use CPMA skin coloring
+	if (am_CPMASkins.integer) {
+		CG_SetColors(clientNum, AM_COLORPART_1, le->color);
+
+		le->color[0] *= 0.75f;
+		le->color[1] *= 0.75f;
+		le->color[2] *= 0.75f;
+		le->color[3] = 1.0f;
+
+		CG_SetShaderColors(clientNum, AM_COLORPART_1, re->shaderRGBA);
+		re->shaderRGBA[3] = 255;
+	} else {
+		re->shaderRGBA[0] = ci->color1[0] * 255;
+		re->shaderRGBA[1] = ci->color1[1] * 255;
+		re->shaderRGBA[2] = ci->color1[2] * 255;
+		re->shaderRGBA[3] = 255;
+
+		le->color[0] = ci->color1[0] * 0.75;
+		le->color[1] = ci->color1[1] * 0.75;
+		le->color[2] = ci->color1[2] * 0.75;
+		le->color[3] = 1.0f;
+	}
 
 	AxisClear( re->axis );
- 
+
 	if (cg_oldRail.integer)
 	{
 		// nudge down a bit so it isn't exactly in center
@@ -274,12 +295,16 @@ void CG_RailTrail (clientInfo_t *ci, vec3_t start, vec3_t end) {
 	VectorScale (vec, SPACING, vec);
 
 	skip = -1;
- 
+
 	j = 18;
+	totalDots = 0;
 	for (i = 0; i < len; i += SPACING)
 	{
 		if (i != skip)
 		{
+			if (++totalDots > MAX_DOTS)
+				break;
+
 			skip = i + SPACING;
 			le = CG_AllocLocalEntity();
 			re = &le->refEntity;
@@ -294,15 +319,29 @@ void CG_RailTrail (clientInfo_t *ci, vec3_t start, vec3_t end) {
 			re->radius = 1.1f;
 			re->customShader = cgs.media.railRingsShader;
 
-			re->shaderRGBA[0] = ci->color2[0] * 255;
-			re->shaderRGBA[1] = ci->color2[1] * 255;
-			re->shaderRGBA[2] = ci->color2[2] * 255;
-			re->shaderRGBA[3] = 255;
+			//aibsmod - use CPMA skin coloring
+			if (am_CPMASkins.integer) {
+				CG_SetColors(clientNum, AM_COLORPART_2, le->color);
 
-			le->color[0] = ci->color2[0] * 0.75;
-			le->color[1] = ci->color2[1] * 0.75;
-			le->color[2] = ci->color2[2] * 0.75;
-			le->color[3] = 1.0f;
+				le->color[0] *= 0.75f;
+				le->color[1] *= 0.75f;
+				le->color[2] *= 0.75f;
+				le->color[3] = 1.0f;
+
+				CG_SetShaderColors(clientNum, AM_COLORPART_2, re->shaderRGBA);
+				re->shaderRGBA[3] = 255;
+
+			} else {
+				re->shaderRGBA[0] = ci->color2[0] * 255;
+				re->shaderRGBA[1] = ci->color2[1] * 255;
+				re->shaderRGBA[2] = ci->color2[2] * 255;
+				re->shaderRGBA[3] = 255;
+
+				le->color[0] = ci->color2[0] * 0.75;
+				le->color[1] = ci->color2[1] * 0.75;
+				le->color[2] = ci->color2[2] * 0.75;
+				le->color[3] = 1.0f;
+			}
 
 			le->pos.trType = TR_LINEAR;
 			le->pos.trTime = cg.time;
@@ -375,13 +414,13 @@ static void CG_RocketTrail( centity_t *ent, const weaponInfo_t *wi ) {
 	for ( ; t <= ent->trailTime ; t += step ) {
 		BG_EvaluateTrajectory( &es->pos, t, lastPos );
 
-		smoke = CG_SmokePuff( lastPos, up, 
-					  wi->trailRadius, 
+		smoke = CG_SmokePuff( lastPos, up,
+					  wi->trailRadius,
 					  1, 1, 1, 0.33f,
-					  wi->wiTrailTime, 
+					  wi->wiTrailTime,
 					  t,
 					  0,
-					  0, 
+					  0,
 					  cgs.media.smokePuffShader );
 		// use the optimized local entity add
 		smoke->leType = LE_SCALE_FADE;
@@ -443,13 +482,13 @@ static void CG_NailTrail( centity_t *ent, const weaponInfo_t *wi ) {
 	for ( ; t <= ent->trailTime ; t += step ) {
 		BG_EvaluateTrajectory( &es->pos, t, lastPos );
 
-		smoke = CG_SmokePuff( lastPos, up, 
-					  wi->trailRadius, 
+		smoke = CG_SmokePuff( lastPos, up,
+					  wi->trailRadius,
 					  1, 1, 1, 0.33f,
-					  wi->wiTrailTime, 
+					  wi->wiTrailTime,
 					  t,
 					  0,
-					  0, 
+					  0,
 					  cgs.media.nailPuffShader );
 		// use the optimized local entity add
 		smoke->leType = LE_SCALE_FADE;
@@ -739,7 +778,7 @@ void CG_RegisterWeapon( int weaponNum ) {
 		weaponInfo->missileDlight = 200;
 		weaponInfo->wiTrailTime = 2000;
 		weaponInfo->trailRadius = 64;
-		
+
 		MAKERGB( weaponInfo->missileDlightColor, 1, 0.75f, 0 );
 		MAKERGB( weaponInfo->flashDlightColor, 1, 0.75f, 0 );
 
@@ -853,7 +892,7 @@ void CG_RegisterItemVisuals( int itemNum ) {
 	//
 	// powerups have an accompanying ring or sphere
 	//
-	if ( item->giType == IT_POWERUP || item->giType == IT_HEALTH || 
+	if ( item->giType == IT_POWERUP || item->giType == IT_HEALTH ||
 		item->giType == IT_ARMOR || item->giType == IT_HOLDABLE ) {
 		if ( item->world_model[1] ) {
 			itemInfo->models[1] = trap_R_RegisterModel( item->world_model[1] );
@@ -879,23 +918,23 @@ CG_MapTorsoToWeaponFrame
 static int CG_MapTorsoToWeaponFrame( clientInfo_t *ci, int frame ) {
 
 	// change weapon
-	if ( frame >= ci->animations[TORSO_DROP].firstFrame 
+	if ( frame >= ci->animations[TORSO_DROP].firstFrame
 		&& frame < ci->animations[TORSO_DROP].firstFrame + 9 ) {
 		return frame - ci->animations[TORSO_DROP].firstFrame + 6;
 	}
 
 	// stand attack
-	if ( frame >= ci->animations[TORSO_ATTACK].firstFrame 
+	if ( frame >= ci->animations[TORSO_ATTACK].firstFrame
 		&& frame < ci->animations[TORSO_ATTACK].firstFrame + 6 ) {
 		return 1 + frame - ci->animations[TORSO_ATTACK].firstFrame;
 	}
 
 	// stand attack 2
-	if ( frame >= ci->animations[TORSO_ATTACK2].firstFrame 
+	if ( frame >= ci->animations[TORSO_ATTACK2].firstFrame
 		&& frame < ci->animations[TORSO_ATTACK2].firstFrame + 6 ) {
 		return 1 + frame - ci->animations[TORSO_ATTACK2].firstFrame;
 	}
-	
+
 	return 0;
 }
 
@@ -913,43 +952,47 @@ static void CG_CalculateWeaponPosition( vec3_t origin, vec3_t angles ) {
 	VectorCopy( cg.refdef.vieworg, origin );
 	VectorCopy( cg.refdefViewAngles, angles );
 
-	// on odd legs, invert some angles
-	if ( cg.bobcycle & 1 ) {
-		scale = -cg.xyspeed;
-	} else {
-		scale = cg.xyspeed;
-	}
+	//aibsmod - if 	am_weaponBob is disabled, do not displace the weapon
+	if (am_weaponBob.integer) {
 
-	// gun angles from bobbing
-	angles[ROLL] += scale * cg.bobfracsin * 0.005;
-	angles[YAW] += scale * cg.bobfracsin * 0.01;
-	angles[PITCH] += cg.xyspeed * cg.bobfracsin * 0.005;
+		// on odd legs, invert some angles
+		if ( cg.bobcycle & 1 ) {
+			scale = -cg.xyspeed;
+		} else {
+			scale = cg.xyspeed;
+		}
 
-	// drop the weapon when landing
-	delta = cg.time - cg.landTime;
-	if ( delta < LAND_DEFLECT_TIME ) {
-		origin[2] += cg.landChange*0.25 * delta / LAND_DEFLECT_TIME;
-	} else if ( delta < LAND_DEFLECT_TIME + LAND_RETURN_TIME ) {
-		origin[2] += cg.landChange*0.25 * 
-			(LAND_DEFLECT_TIME + LAND_RETURN_TIME - delta) / LAND_RETURN_TIME;
-	}
+		// gun angles from bobbing
+		angles[ROLL] += scale * cg.bobfracsin * 0.005;
+		angles[YAW] += scale * cg.bobfracsin * 0.01;
+		angles[PITCH] += cg.xyspeed * cg.bobfracsin * 0.005;
+
+		// drop the weapon when landing
+		delta = cg.time - cg.landTime;
+		if ( delta < LAND_DEFLECT_TIME ) {
+			origin[2] += cg.landChange*0.25 * delta / LAND_DEFLECT_TIME;
+		} else if ( delta < LAND_DEFLECT_TIME + LAND_RETURN_TIME ) {
+			origin[2] += cg.landChange*0.25 *
+				(LAND_DEFLECT_TIME + LAND_RETURN_TIME - delta) / LAND_RETURN_TIME;
+		}
 
 #if 0
-	// drop the weapon when stair climbing
-	delta = cg.time - cg.stepTime;
-	if ( delta < STEP_TIME/2 ) {
-		origin[2] -= cg.stepChange*0.25 * delta / (STEP_TIME/2);
-	} else if ( delta < STEP_TIME ) {
-		origin[2] -= cg.stepChange*0.25 * (STEP_TIME - delta) / (STEP_TIME/2);
-	}
+		// drop the weapon when stair climbing
+		delta = cg.time - cg.stepTime;
+		if ( delta < STEP_TIME/2 ) {
+			origin[2] -= cg.stepChange*0.25 * delta / (STEP_TIME/2);
+		} else if ( delta < STEP_TIME ) {
+			origin[2] -= cg.stepChange*0.25 * (STEP_TIME - delta) / (STEP_TIME/2);
+		}
 #endif
 
-	// idle drift
-	scale = cg.xyspeed + 40;
-	fracsin = sin( cg.time * 0.001 );
-	angles[ROLL] += scale * fracsin * 0.01;
-	angles[YAW] += scale * fracsin * 0.01;
-	angles[PITCH] += scale * fracsin * 0.01;
+		// idle drift
+		scale = cg.xyspeed + 40;
+		fracsin = sin( cg.time * 0.001 );
+		angles[ROLL] += scale * fracsin * 0.01;
+		angles[YAW] += scale * fracsin * 0.01;
+		angles[PITCH] += scale * fracsin * 0.01;
+	}
 }
 
 
@@ -1022,7 +1065,7 @@ static void CG_LightningBolt( centity_t *cent, vec3_t origin ) {
 	VectorMA( muzzlePoint, LIGHTNING_RANGE, forward, endPoint );
 
 	// see if it hit a wall
-	CG_Trace( &trace, muzzlePoint, vec3_origin, vec3_origin, endPoint, 
+	CG_Trace( &trace, muzzlePoint, vec3_origin, vec3_origin, endPoint,
 		cent->currentState.number, MASK_SHOT );
 
 	// this is the endpoint
@@ -1084,7 +1127,7 @@ static void CG_LightningBolt( centity_t *cent, vec3_t origin ) {
 	VectorMA( muzzlePoint, LIGHTNING_RANGE, forward, endPoint );
 
 	// see if it hit a wall
-	CG_Trace( &trace, muzzlePoint, vec3_origin, vec3_origin, endPoint, 
+	CG_Trace( &trace, muzzlePoint, vec3_origin, vec3_origin, endPoint,
 		cent->currentState.number, MASK_SHOT );
 
 	// this is the endpoint
@@ -1181,6 +1224,11 @@ static void CG_AddWeaponWithPowerups( refEntity_t *gun, int powerups ) {
 		if ( powerups & ( 1 << PW_QUAD ) ) {
 			gun->customShader = cgs.media.quadWeaponShader;
 			trap_R_AddRefEntityToScene( gun );
+		}
+
+		if ((cgs.gametype == GT_RAMBO || cgs.gametype == GT_RAMBO_TEAM) && (powerups & (1 << PW_CARRIER))) {
+			gun->customShader = cgs.media.ramboWeaponShader;
+			trap_R_AddRefEntityToScene(gun);
 		}
 	}
 }
@@ -1297,7 +1345,7 @@ void CG_AddPlayerWeapon( refEntity_t *parent, playerState_t *ps, centity_t *cent
 
 	// add the flash
 	if ( ( weaponNum == WP_LIGHTNING || weaponNum == WP_GAUNTLET || weaponNum == WP_GRAPPLING_HOOK )
-		&& ( nonPredictedCent->currentState.eFlags & EF_FIRING ) ) 
+		&& ( nonPredictedCent->currentState.eFlags & EF_FIRING ) )
 	{
 		// continuous flash
 	} else {
@@ -1326,9 +1374,16 @@ void CG_AddPlayerWeapon( refEntity_t *parent, playerState_t *ps, centity_t *cent
 		clientInfo_t	*ci;
 
 		ci = &cgs.clientinfo[ cent->currentState.clientNum ];
-		flash.shaderRGBA[0] = 255 * ci->color1[0];
-		flash.shaderRGBA[1] = 255 * ci->color1[1];
-		flash.shaderRGBA[2] = 255 * ci->color1[2];
+
+		//aibsmod - use CPMA skin coloring
+		if (am_CPMASkins.integer)
+			CG_SetShaderColors(cent->currentState.clientNum, AM_COLORPART_1, flash.shaderRGBA);
+
+		else {
+			flash.shaderRGBA[0] = 255 * ci->color1[0];
+			flash.shaderRGBA[1] = 255 * ci->color1[1];
+			flash.shaderRGBA[2] = 255 * ci->color1[2];
+		}
 	}
 
 	CG_PositionRotatedEntityOnTag( &flash, &gun, weapon->weaponModel, "tag_flash");
@@ -1445,6 +1500,24 @@ WEAPON SELECTION
 */
 
 /*
+===============
+CG_WeaponSelectable
+===============
+*/
+static qboolean CG_WeaponSelectable( int i ) {
+	if ((i == WP_GRENADE_LAUNCHER) && am_tripmineGrenades.integer && (cg.snap->ps.ammo[WP_GRENADE_LAUNCHER] >= 0) && (cg.snap->ps.ammo[WP_GRENADE_LAUNCHER] < 5))
+		return qfalse;
+	else if ( !cg.snap->ps.ammo[i] ) {
+		return qfalse;
+	}
+	if ( ! (cg.snap->ps.stats[ STAT_WEAPONS ] & ( 1 << i ) ) ) {
+		return qfalse;
+	}
+
+	return qtrue;
+}
+
+/*
 ===================
 CG_DrawWeaponSelect
 ===================
@@ -1499,7 +1572,9 @@ void CG_DrawWeaponSelect( void ) {
 		}
 
 		// no ammo cross on top
-		if ( !cg.snap->ps.ammo[ i ] ) {
+		//aibsmod - use CG_WeaponSelectable
+//		if ( !cg.snap->ps.ammo[ i ] ) {
+		if (!CG_WeaponSelectable(i)) {
 			CG_DrawPic( x, y, 32, 32, cgs.media.noammoShader );
 		}
 
@@ -1517,23 +1592,6 @@ void CG_DrawWeaponSelect( void ) {
 	}
 
 	trap_R_SetColor( NULL );
-}
-
-
-/*
-===============
-CG_WeaponSelectable
-===============
-*/
-static qboolean CG_WeaponSelectable( int i ) {
-	if ( !cg.snap->ps.ammo[i] ) {
-		return qfalse;
-	}
-	if ( ! (cg.snap->ps.stats[ STAT_WEAPONS ] & ( 1 << i ) ) ) {
-		return qfalse;
-	}
-
-	return qtrue;
 }
 
 /*
@@ -1570,6 +1628,15 @@ void CG_NextWeapon_f( void ) {
 	if ( i == MAX_WEAPONS ) {
 		cg.weaponSelect = original;
 	}
+
+	//aibsmod - ball carriers cannot change weapons
+	if (cgs.gametype == GT_FOOTBALL && cg.snap->ps.powerups[PW_CARRIER])
+		cg.weaponSelect = original;
+
+	//aibsmod - cannot change weapons if they're disabled
+	if (am_disableWeapons.integer)
+		cg.weaponSelect = WP_GAUNTLET;
+
 }
 
 /*
@@ -1606,6 +1673,15 @@ void CG_PrevWeapon_f( void ) {
 	if ( i == MAX_WEAPONS ) {
 		cg.weaponSelect = original;
 	}
+
+	//aibsmod - ball carriers cannot change weapons
+	if (cgs.gametype == GT_FOOTBALL && cg.snap->ps.powerups[PW_CARRIER])
+		cg.weaponSelect = original;
+
+	//aibsmod - cannot change weapons if they're disabled
+	if (am_disableWeapons.integer)
+		cg.weaponSelect = WP_GAUNTLET;
+
 }
 
 /*
@@ -1630,6 +1706,14 @@ void CG_Weapon_f( void ) {
 	}
 
 	cg.weaponSelectTime = cg.time;
+
+	//aibsmod - ball carriers cannot change weapons
+	if (cgs.gametype == GT_FOOTBALL && cg.snap->ps.powerups[PW_CARRIER])
+		return;
+
+	//aibsmod - cannot change weapons if they're disabled
+	if (am_disableWeapons.integer)
+		return;
 
 	if ( ! ( cg.snap->ps.stats[STAT_WEAPONS] & ( 1 << num ) ) ) {
 		return;		// don't have the weapon
@@ -1906,18 +1990,24 @@ void CG_MissileHitWall( int weapon, int clientNum, vec3_t origin, vec3_t dir, im
 	// create the explosion
 	//
 	if ( mod ) {
-		le = CG_MakeExplosion( origin, dir, 
+		le = CG_MakeExplosion( origin, dir,
 							   mod,	shader,
 							   duration, isSprite );
 		le->light = light;
 		VectorCopy( lightColor, le->lightColor );
 		if ( weapon == WP_RAILGUN ) {
+
+			//aibsmod - use CPMA skin coloring
+			if (am_CPMASkins.integer)
+				CG_SetColors(clientNum, AM_COLORPART_1, le->color);
 			// colorize with client color
-			VectorCopy( cgs.clientinfo[clientNum].color1, le->color );
-			le->refEntity.shaderRGBA[0] = le->color[0] * 0xff;
-			le->refEntity.shaderRGBA[1] = le->color[1] * 0xff;
-			le->refEntity.shaderRGBA[2] = le->color[2] * 0xff;
-			le->refEntity.shaderRGBA[3] = 0xff;
+			else {
+				VectorCopy( cgs.clientinfo[clientNum].color1, le->color );
+				le->refEntity.shaderRGBA[0] = le->color[0] * 0xff;
+				le->refEntity.shaderRGBA[1] = le->color[1] * 0xff;
+				le->refEntity.shaderRGBA[2] = le->color[2] * 0xff;
+				le->refEntity.shaderRGBA[3] = 0xff;
+			}
 		}
 	}
 
@@ -1926,11 +2016,21 @@ void CG_MissileHitWall( int weapon, int clientNum, vec3_t origin, vec3_t dir, im
 	//
 	alphaFade = (mark == cgs.media.energyMarkShader);	// plasma fades alpha, all others fade color
 	if ( weapon == WP_RAILGUN ) {
-		float	*color;
+				//aibsmod - use CPMA skin coloring
+		if (am_CPMASkins.integer) {
+			float color[3];
 
-		// colorize with client color
-		color = cgs.clientinfo[clientNum].color1;
-		CG_ImpactMark( mark, origin, dir, random()*360, color[0],color[1], color[2],1, alphaFade, radius, qfalse );
+			CG_SetColors(clientNum, AM_COLORPART_2, color);
+			CG_ImpactMark( mark, origin, dir, random()*360, color[0],color[1], color[2],1, alphaFade, radius, qfalse );
+		}
+
+		else {
+			float	*color;
+
+			// colorize with client color
+			color = cgs.clientinfo[clientNum].color1;
+			CG_ImpactMark( mark, origin, dir, random()*360, color[0],color[1], color[2],1, alphaFade, radius, qfalse );
+		}
 	} else {
 		CG_ImpactMark( mark, origin, dir, random()*360, 1,1,1,1, alphaFade, radius, qfalse );
 	}

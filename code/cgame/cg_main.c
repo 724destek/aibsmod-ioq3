@@ -30,6 +30,7 @@ displayContextDef_t cgDC;
 #endif
 
 int forceModelModificationCount = -1;
+int lastTeam = -1;
 
 void CG_Init( int serverMessageNum, int serverCommandSequence, int clientNum );
 void CG_Shutdown( void );
@@ -200,6 +201,44 @@ vmCvar_t	cg_recordSPDemoName;
 vmCvar_t	cg_obeliskRespawnDelay;
 #endif
 
+//aibsmod - client variables
+vmCvar_t	am_drawFootballTracer;
+
+vmCvar_t	am_drawKillNotice;
+vmCvar_t	am_drawSpeed;
+vmCvar_t	am_drawSpeedMethod;
+vmCvar_t	am_drawSpeedFrames;
+vmCvar_t	am_drawSpeedFull;
+vmCvar_t	am_drawButtons;
+
+vmCvar_t	am_hitFeedback;
+vmCvar_t	am_chatBeep;
+vmCvar_t	am_weaponBob;
+
+vmCvar_t	am_CPMASkins;
+vmCvar_t	am_colors;
+vmCvar_t	am_enemyColors;
+vmCvar_t	am_friendlyColors;
+
+vmCvar_t	am_demoFastForwardSpeed;
+
+vmCvar_t	amh_depth;
+vmCvar_t	amh_customPlayerShader;
+
+vmCvar_t	model;
+vmCvar_t	headmodel;
+vmCvar_t	team_model;
+vmCvar_t	team_headmodel;
+vmCvar_t	enemy_model;
+vmCvar_t	enemy_headmodel;
+
+//aibsmod - server/shared variables. These will be communicated to us by the server (and used by pmove)
+vmCvar_t	am_fastWeaponSwitch;
+vmCvar_t	am_trainingMode;
+vmCvar_t	am_airControl;
+vmCvar_t	am_disableWeapons;
+vmCvar_t	am_tripmineGrenades;
+
 typedef struct {
 	vmCvar_t	*vmCvar;
 	char		*cvarName;
@@ -320,8 +359,46 @@ static cvarTable_t cvarTable[] = {
 	{ &cg_oldRail, "cg_oldRail", "1", CVAR_ARCHIVE},
 	{ &cg_oldRocket, "cg_oldRocket", "1", CVAR_ARCHIVE},
 	{ &cg_oldPlasma, "cg_oldPlasma", "1", CVAR_ARCHIVE},
-	{ &cg_trueLightning, "cg_trueLightning", "0.0", CVAR_ARCHIVE}
+	{ &cg_trueLightning, "cg_trueLightning", "0.0", CVAR_ARCHIVE},
 //	{ &cg_pmove_fixed, "cg_pmove_fixed", "0", CVAR_USERINFO | CVAR_ARCHIVE }
+
+	//aibsmod shared cvars (bg_public.h)
+	{ &am_fastWeaponSwitch, "am_fastWeaponSwitch", "0", CVAR_SERVERINFO },
+	{ &am_trainingMode, "am_trainingMode", "0", CVAR_SERVERINFO },
+	{ &am_airControl, "am_airControl", "1.0", CVAR_SERVERINFO },
+	{ &am_disableWeapons, "am_disableWeapons", "0", CVAR_SERVERINFO },
+	{ &am_tripmineGrenades, "am_tripmineGrenades", "0", CVAR_SERVERINFO },
+
+	//aibsmod client-side cvars
+	{ &am_drawFootballTracer, "am_drawFootballTracer", "0", CVAR_ARCHIVE },
+	{ &am_drawKillNotice, "am_drawKillNotice", "1", CVAR_ARCHIVE },
+	{ &am_drawSpeed, "am_drawSpeed", "0", CVAR_ARCHIVE },
+	{ &am_drawSpeedMethod, "am_drawSpeedMethod", "0", CVAR_ARCHIVE },
+	{ &am_drawSpeedFrames, "am_drawSpeedFrames", "1", CVAR_ARCHIVE },
+	{ &am_drawSpeedFull, "am_drawSpeedFull", "0", CVAR_ARCHIVE },
+	{ &am_drawButtons, "am_drawButtons", "0", CVAR_ARCHIVE },
+
+	{ &am_hitFeedback, "am_hitFeedback", "0", CVAR_ARCHIVE },
+	{ &am_chatBeep, "am_chatBeep", "1", CVAR_ARCHIVE },
+	{ &am_weaponBob, "am_weaponBob", "1", CVAR_ARCHIVE },
+
+	{ &am_CPMASkins, "am_CPMASkins", "0", CVAR_ARCHIVE },
+	{ &am_colors, "am_colors", "-----", CVAR_USERINFO | CVAR_ARCHIVE },
+	{ &am_enemyColors, "am_enemyColors", "-----", CVAR_ARCHIVE },
+	{ &am_friendlyColors, "am_friendlyColors", "-----", CVAR_ARCHIVE },
+
+	{ &am_demoFastForwardSpeed, "am_demoFastForwardSpeed", "50", CVAR_ARCHIVE },
+
+	{ &amh_depth, "amh_depth", "0", CVAR_CHEAT },
+	{ &amh_customPlayerShader, "amh_customPlayerShader", "0", CVAR_CHEAT },
+
+	//aibsmod - fixing model cvars
+	{ &model,			"model",			DEFAULT_MODEL, CVAR_USERINFO | CVAR_ARCHIVE },
+	{ &headmodel,		"headmodel",		DEFAULT_MODEL, CVAR_USERINFO | CVAR_ARCHIVE },
+	{ &team_model,		"team_model",		DEFAULT_MODEL, CVAR_USERINFO | CVAR_ARCHIVE },
+	{ &team_headmodel,	"team_headmodel",	DEFAULT_MODEL, CVAR_USERINFO | CVAR_ARCHIVE },
+	{ &enemy_model,		"enemy_model",		DEFAULT_MODEL, CVAR_USERINFO | CVAR_ARCHIVE },
+	{ &enemy_headmodel,	"enemy_headmodel",	DEFAULT_MODEL, CVAR_USERINFO | CVAR_ARCHIVE }
 };
 
 static int  cvarTableSize = ARRAY_LEN( cvarTable );
@@ -345,15 +422,15 @@ void CG_RegisterCvars( void ) {
 	trap_Cvar_VariableStringBuffer( "sv_running", var, sizeof( var ) );
 	cgs.localServer = atoi( var );
 
-	forceModelModificationCount = cg_forceModel.modificationCount;
+	// forceModelModificationCount = cg_forceModel.modificationCount;
 
-	trap_Cvar_Register(NULL, "model", DEFAULT_MODEL, CVAR_USERINFO | CVAR_ARCHIVE );
-	trap_Cvar_Register(NULL, "headmodel", DEFAULT_MODEL, CVAR_USERINFO | CVAR_ARCHIVE );
-	trap_Cvar_Register(NULL, "team_model", DEFAULT_TEAM_MODEL, CVAR_USERINFO | CVAR_ARCHIVE );
-	trap_Cvar_Register(NULL, "team_headmodel", DEFAULT_TEAM_HEAD, CVAR_USERINFO | CVAR_ARCHIVE );
+	// trap_Cvar_Register(NULL, "model", DEFAULT_MODEL, CVAR_USERINFO | CVAR_ARCHIVE );
+	// trap_Cvar_Register(NULL, "headmodel", DEFAULT_MODEL, CVAR_USERINFO | CVAR_ARCHIVE );
+	// trap_Cvar_Register(NULL, "team_model", DEFAULT_TEAM_MODEL, CVAR_USERINFO | CVAR_ARCHIVE );
+	// trap_Cvar_Register(NULL, "team_headmodel", DEFAULT_TEAM_HEAD, CVAR_USERINFO | CVAR_ARCHIVE );
 }
 
-/*																																			
+/*
 ===================
 CG_ForceModelChange
 ===================
@@ -380,6 +457,7 @@ CG_UpdateCvars
 void CG_UpdateCvars( void ) {
 	int			i;
 	cvarTable_t	*cv;
+	int			newModCount;
 
 	for ( i = 0, cv = cvarTable ; i < cvarTableSize ; i++, cv++ ) {
 		trap_Cvar_Update( cv->vmCvar );
@@ -399,9 +477,20 @@ void CG_UpdateCvars( void ) {
 		}
 	}
 
+	newModCount =
+			cg_forceModel.modificationCount +
+			model.modificationCount +
+			headmodel.modificationCount +
+			team_model.modificationCount +
+			team_headmodel.modificationCount +
+			enemy_model.modificationCount +
+			enemy_headmodel.modificationCount;
+
 	// if force model changed
-	if ( forceModelModificationCount != cg_forceModel.modificationCount ) {
-		forceModelModificationCount = cg_forceModel.modificationCount;
+	if ((forceModelModificationCount != newModCount) || (lastTeam != cgs.clientinfo[cg.clientNum].team)) {
+		forceModelModificationCount = newModCount;
+		lastTeam = cgs.clientinfo[cg.clientNum].team;
+
 		CG_ForceModelChange();
 	}
 }
@@ -512,7 +601,7 @@ static void CG_RegisterItemSounds( int itemNum ) {
 
 		len = s-start;
 		if (len >= MAX_QPATH || len < 5) {
-			CG_Error( "PrecacheItem: %s has bad precache string", 
+			CG_Error( "PrecacheItem: %s has bad precache string",
 				item->classname);
 			return;
 		}
@@ -619,6 +708,44 @@ static void CG_RegisterSounds( void ) {
 	cgs.media.gibBounce1Sound = trap_S_RegisterSound( "sound/player/gibimp1.wav", qfalse );
 	cgs.media.gibBounce2Sound = trap_S_RegisterSound( "sound/player/gibimp2.wav", qfalse );
 	cgs.media.gibBounce3Sound = trap_S_RegisterSound( "sound/player/gibimp3.wav", qfalse );
+
+	//aibsmod sounds
+	cgs.media.hit1Sound = trap_S_RegisterSound("sound/feedback/hit1.wav", qfalse);
+	cgs.media.hit2Sound = trap_S_RegisterSound("sound/feedback/hit2.wav", qfalse);
+	cgs.media.hit3Sound = trap_S_RegisterSound("sound/feedback/hit3.wav", qfalse);
+	cgs.media.hit4Sound = trap_S_RegisterSound("sound/feedback/hit4.wav", qfalse);
+	cgs.media.hit25Sound = trap_S_RegisterSound("sound/feedback/hit25.wav", qfalse);
+	cgs.media.hit50Sound = trap_S_RegisterSound("sound/feedback/hit50.wav", qfalse);
+	cgs.media.hit75Sound = trap_S_RegisterSound("sound/feedback/hit75.wav", qfalse);
+	cgs.media.hit100Sound = trap_S_RegisterSound("sound/feedback/hit100.wav", qfalse);
+
+	cgs.media.airRocketSound = trap_S_RegisterSound("sound/feedback/airrocket.wav", qtrue);
+	cgs.media.airGrenadeSound = trap_S_RegisterSound("sound/feedback/airgrenade.wav", qtrue);
+	cgs.media.airComboSound = trap_S_RegisterSound("sound/feedback/aircombo.wav", qtrue);
+
+	cgs.media.airDoubleComboSound = trap_S_RegisterSound("sound/feedback/airdouble.wav", qtrue);
+	cgs.media.airTripleComboSound = trap_S_RegisterSound("sound/feedback/airtriple.wav", qtrue);
+	cgs.media.airBigComboSound = trap_S_RegisterSound("sound/feedback/airbig.wav", qtrue);
+
+	cgs.media.ramboStealSound = trap_S_RegisterSound("sound/rambo/rambo_steal.wav", qtrue);
+	cgs.media.ramboKillSound = trap_S_RegisterSound("sound/rambo/rambo_kill.wav", qtrue);
+
+	cgs.media.tripmineArmSound = trap_S_RegisterSound("sound/weapons/tripmine_arm.wav", qtrue);
+	cgs.media.tripmineExplodeSound = trap_S_RegisterSound("sound/weapons/tripmine_explode.wav", qtrue);
+
+	cgs.media.ballKick1Sound = trap_S_RegisterSound("sound/football/kick1.wav", qtrue);
+	cgs.media.ballKick2Sound = trap_S_RegisterSound("sound/football/kick2.wav", qtrue);
+	cgs.media.ballKick3Sound = trap_S_RegisterSound("sound/football/kick3.wav", qtrue);
+
+	cgs.media.ballResetSound = trap_S_RegisterSound("sound/football/ballreset.wav", qtrue);
+	cgs.media.youHaveTheBallSound = trap_S_RegisterSound("sound/football/gotball.wav", qtrue);
+	cgs.media.youLostTheBallSound = trap_S_RegisterSound("sound/football/lostball.wav", qtrue);
+
+	cgs.media.yourTeamGoalSound = trap_S_RegisterSound("sound/football/goal_yourteam.wav", qtrue);
+	cgs.media.opponentGoalSound = trap_S_RegisterSound("sound/football/goal_opponent.wav", qtrue);
+
+	cgs.media.goalCheerSound = trap_S_RegisterSound("sound/football/goal_cheer.wav", qtrue);
+	cgs.media.goalSneerSound = trap_S_RegisterSound("sound/football/goal_sneer.wav", qtrue);
 
 #ifdef MISSIONPACK
 	cgs.media.useInvulnerabilitySound = trap_S_RegisterSound( "sound/items/invul_activate.wav", qfalse );
@@ -1021,6 +1148,9 @@ static void CG_RegisterGraphics( void ) {
 		}
 	}
 
+	//aibsmod - we DO need the rail core shader (we call it "laser")
+	cgs.media.railCoreShader = trap_R_RegisterShader( "railCore" );
+
 	// wall marks
 	cgs.media.bulletMarkShader = trap_R_RegisterShader( "gfx/damage/bullet_mrk" );
 	cgs.media.burnMarkShader = trap_R_RegisterShader( "gfx/damage/burn_med_mrk" );
@@ -1082,6 +1212,45 @@ static void CG_RegisterGraphics( void ) {
 	trap_R_RegisterModel( "models/players/heads/janet/janet.md3" );
 
 #endif
+
+	//aibsmod models
+	cgs.media.footballModel = trap_R_RegisterModel("models/football/ball.md3");
+
+	cgs.media.goalpostRedTopModel = trap_R_RegisterModel("models/football/goalpost_red_top.md3");
+	cgs.media.goalpostRedBackModel = trap_R_RegisterModel("models/football/goalpost_red_back.md3");
+	cgs.media.goalpostRedLeftModel = trap_R_RegisterModel("models/football/goalpost_red_left.md3");
+	cgs.media.goalpostRedRightModel = trap_R_RegisterModel("models/football/goalpost_red_right.md3");
+
+	cgs.media.goalpostBlueTopModel = trap_R_RegisterModel("models/football/goalpost_blue_top.md3");
+	cgs.media.goalpostBlueBackModel = trap_R_RegisterModel("models/football/goalpost_blue_back.md3");
+	cgs.media.goalpostBlueLeftModel = trap_R_RegisterModel("models/football/goalpost_blue_left.md3");
+	cgs.media.goalpostBlueRightModel = trap_R_RegisterModel("models/football/goalpost_blue_right.md3");
+
+	cgs.media.tripmineModel = trap_R_RegisterModel("models/weapons/tripmine.md3");
+
+	//aibsmod shaders
+	cgs.media.tripmineExplosionShader = trap_R_RegisterShader("tripmineExplosion");
+	cgs.media.ramboShader = trap_R_RegisterShader("powerups/rambo");
+	cgs.media.ramboWeaponShader = trap_R_RegisterShader("powerups/ramboWeapon");
+	cgs.media.customPlayerShader = trap_R_RegisterShader("players/custom");
+
+	cgs.media.medalAirRocket = trap_R_RegisterShader("medals/airrocket");
+	cgs.media.medalAirGrenade = trap_R_RegisterShader("medals/airgrenade");
+	cgs.media.medalAirCombo = trap_R_RegisterShader("medals/aircombo");
+
+	cgs.media.button_up_upShader = trap_R_RegisterShader("show_buttons/up_up");
+	cgs.media.button_up_downShader = trap_R_RegisterShader("show_buttons/up_down");
+	cgs.media.button_down_upShader = trap_R_RegisterShader("show_buttons/down_up");
+	cgs.media.button_down_downShader = trap_R_RegisterShader("show_buttons/down_down");
+	cgs.media.button_left_upShader = trap_R_RegisterShader("show_buttons/left_up");
+	cgs.media.button_left_downShader = trap_R_RegisterShader("show_buttons/left_down");
+	cgs.media.button_right_upShader = trap_R_RegisterShader("show_buttons/right_up");
+	cgs.media.button_right_downShader = trap_R_RegisterShader("show_buttons/right_down");
+	cgs.media.button_jump_upShader = trap_R_RegisterShader("show_buttons/jump_up");
+	cgs.media.button_jump_downShader = trap_R_RegisterShader("show_buttons/jump_down");
+	cgs.media.button_fire_upShader = trap_R_RegisterShader("show_buttons/fire_up");
+	cgs.media.button_fire_downShader = trap_R_RegisterShader("show_buttons/fire_down");
+
 	CG_ClearParticles ();
 /*
 	for (i=1; i<MAX_PARTICLES_AREAS; i++)
@@ -1099,7 +1268,7 @@ static void CG_RegisterGraphics( void ) {
 
 
 
-/*																																			
+/*
 =======================
 CG_BuildSpectatorString
 
@@ -1121,7 +1290,7 @@ void CG_BuildSpectatorString(void) {
 }
 
 
-/*																																			
+/*
 ===================
 CG_RegisterClients
 ===================
@@ -1220,7 +1389,7 @@ qboolean CG_Asset_Parse(int handle) {
 	if (Q_stricmp(token.string, "{") != 0) {
 		return qfalse;
 	}
-    
+
 	while ( 1 ) {
 		if (!trap_PC_ReadToken(handle, &token))
 			return qfalse;
@@ -1416,7 +1585,7 @@ qboolean CG_Load_Menu(char **p) {
 	while ( 1 ) {
 
 		token = COM_ParseExt(p, qtrue);
-    
+
 		if (Q_stricmp(token, "}") == 0) {
 			return qtrue;
 		}
@@ -1425,7 +1594,7 @@ qboolean CG_Load_Menu(char **p) {
 			return qfalse;
 		}
 
-		CG_ParseMenu(token); 
+		CG_ParseMenu(token);
 	}
 	return qfalse;
 }
@@ -1459,7 +1628,7 @@ void CG_LoadMenus(const char *menuFile) {
 	trap_FS_Read( buf, len, f );
 	buf[len] = 0;
 	trap_FS_FCloseFile( f );
-	
+
 	COM_Compress(buf);
 
 	Menu_Reset();
@@ -1656,7 +1825,7 @@ static const char *CG_FeederItemText(float feederID, int index, int column, qhan
 			case 6:
 				if ( sp->ping == -1 ) {
 					return "connecting";
-				} 
+				}
 				return va("%4i", sp->ping);
 			break;
 		}
@@ -1757,7 +1926,7 @@ void CG_LoadHudMenu( void ) {
 	cgDC.registerModel = &trap_R_RegisterModel;
 	cgDC.modelBounds = &trap_R_ModelBounds;
 	cgDC.fillRect = &CG_FillRect;
-	cgDC.drawRect = &CG_DrawRect;   
+	cgDC.drawRect = &CG_DrawRect;
 	cgDC.drawSides = &CG_DrawSides;
 	cgDC.drawTopBottom = &CG_DrawTopBottom;
 	cgDC.clearScene = &trap_R_ClearScene;
@@ -1785,8 +1954,8 @@ void CG_LoadHudMenu( void ) {
 	//cgDC.getBindingBuf = &trap_Key_GetBindingBuf;
 	//cgDC.keynumToStringBuf = &trap_Key_KeynumToStringBuf;
 	//cgDC.executeText = &trap_Cmd_ExecuteText;
-	cgDC.Error = &Com_Error; 
-	cgDC.Print = &Com_Printf; 
+	cgDC.Error = &Com_Error;
+	cgDC.Print = &Com_Printf;
 	cgDC.ownerDrawWidth = &CG_OwnerDrawWidth;
 	//cgDC.Pause = &CG_Pause;
 	cgDC.registerSound = &trap_S_RegisterSound;
@@ -1796,11 +1965,11 @@ void CG_LoadHudMenu( void ) {
 	cgDC.stopCinematic = &CG_StopCinematic;
 	cgDC.drawCinematic = &CG_DrawCinematic;
 	cgDC.runCinematicFrame = &CG_RunCinematicFrame;
-	
+
 	Init_Display(&cgDC);
 
 	Menu_Reset();
-	
+
 	trap_Cvar_VariableStringBuffer("cg_hudFiles", buff, sizeof(buff));
 	hudSet = buff;
 	if (hudSet[0] == '\0') {
@@ -1855,6 +2024,13 @@ void CG_Init( int serverMessageNum, int serverCommandSequence, int clientNum ) {
 
 	cg.clientNum = clientNum;
 
+	//aibsmod stuff
+	cg.carrierNum = -1;
+	cg.trackButtonsClient = clientNum;
+	//These might be unnecessary
+	cg.zpos = 0.0f;
+	cg.buttonState = 0;
+
 	cgs.processedSnapshotNum = serverMessageNum;
 	cgs.serverCommandSequence = serverCommandSequence;
 
@@ -1891,6 +2067,9 @@ void CG_Init( int serverMessageNum, int serverCommandSequence, int clientNum ) {
 
 	s = CG_ConfigString( CS_LEVEL_START_TIME );
 	cgs.levelStartTime = atoi( s );
+
+	//aibsmod initialization
+	cg.demoFastForward = AM_DEMOFF_OFF;
 
 	CG_ParseServerinfo();
 

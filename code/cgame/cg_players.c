@@ -325,6 +325,10 @@ static qboolean	CG_FindClientModelFile( char *filename, int length, clientInfo_t
 				break;
 			}
 		}
+
+		//aibsmod - hack, but works
+		if (am_CPMASkins.integer)
+			team = "pm";
 	}
 	else {
 		team = "default";
@@ -400,6 +404,10 @@ static qboolean	CG_FindClientHeadFile( char *filename, int length, clientInfo_t 
 				break;
 			}
 		}
+
+		//aibsmod - hack, but works
+		if (am_CPMASkins.integer)
+			team = "pm";
 	}
 	else {
 		team = "default";
@@ -669,28 +677,45 @@ static void CG_LoadClientInfo( int clientNum, clientInfo_t *ci ) {
 	}
 #endif
 	modelloaded = qtrue;
-	if ( !CG_RegisterClientModelname( ci, ci->modelName, ci->skinName, ci->headModelName, ci->headSkinName, teamname ) ) {
-		if ( cg_buildScript.integer ) {
-			CG_Error( "CG_RegisterClientModelname( %s, %s, %s, %s %s ) failed", ci->modelName, ci->skinName, ci->headModelName, ci->headSkinName, teamname );
-		}
 
-		// fall back to default team name
-		if( cgs.gametype >= GT_TEAM) {
-			// keep skin name
-			if( ci->team == TEAM_BLUE ) {
-				Q_strncpyz(teamname, DEFAULT_BLUETEAM_NAME, sizeof(teamname) );
-			} else {
-				Q_strncpyz(teamname, DEFAULT_REDTEAM_NAME, sizeof(teamname) );
+	//aibsmod - CPMA skins
+	if (am_CPMASkins.integer) {
+		if (!CG_RegisterClientModelname(ci, ci->modelName, "pm", ci->headModelName, "pm", NULL)) {
+			if (cg_buildScript.integer) {
+				CG_Error("CG_RegisterClientModelname( %s, %s, %s, %s %s ) failed", ci->modelName, "pm", ci->headModelName, "pm", "NULL");
 			}
-			if ( !CG_RegisterClientModelname( ci, DEFAULT_TEAM_MODEL, ci->skinName, DEFAULT_TEAM_HEAD, ci->skinName, teamname ) ) {
-				CG_Error( "DEFAULT_TEAM_MODEL / skin (%s/%s) failed to register", DEFAULT_TEAM_MODEL, ci->skinName );
+
+			//fall back
+			if (!CG_RegisterClientModelname(ci, DEFAULT_MODEL, "pm", DEFAULT_MODEL, "pm", NULL)) {
+				CG_Error("DEFAULT_MODEL / skin (%s/%s) failed to register", DEFAULT_MODEL, "pm");
 			}
-		} else {
-			if ( !CG_RegisterClientModelname( ci, DEFAULT_MODEL, "default", DEFAULT_MODEL, "default", teamname ) ) {
-				CG_Error( "DEFAULT_MODEL (%s) failed to register", DEFAULT_MODEL );
-			}
+
+			modelloaded = qfalse;
 		}
-		modelloaded = qfalse;
+	} else {
+		if ( !CG_RegisterClientModelname( ci, ci->modelName, ci->skinName, ci->headModelName, ci->headSkinName, teamname ) ) {
+			if ( cg_buildScript.integer ) {
+				CG_Error( "CG_RegisterClientModelname( %s, %s, %s, %s %s ) failed", ci->modelName, ci->skinName, ci->headModelName, ci->headSkinName, teamname );
+			}
+
+			// fall back to default team name
+			if( cgs.gametype >= GT_TEAM) {
+				// keep skin name
+				if( ci->team == TEAM_BLUE ) {
+					Q_strncpyz(teamname, DEFAULT_BLUETEAM_NAME, sizeof(teamname) );
+				} else {
+					Q_strncpyz(teamname, DEFAULT_REDTEAM_NAME, sizeof(teamname) );
+				}
+				if ( !CG_RegisterClientModelname( ci, DEFAULT_MODEL, ci->skinName, DEFAULT_MODEL, ci->skinName, teamname ) ) {
+					CG_Error( "DEFAULT_MODEL / skin (%s/%s) failed to register", DEFAULT_MODEL, ci->skinName );
+				}
+			} else {
+				if ( !CG_RegisterClientModelname( ci, DEFAULT_MODEL, "default", DEFAULT_MODEL, "default", teamname ) ) {
+					CG_Error( "DEFAULT_MODEL (%s) failed to register", DEFAULT_MODEL );
+				}
+			}
+			modelloaded = qfalse;
+		}
 	}
 
 	ci->newAnims = qfalse;
@@ -704,7 +729,8 @@ static void CG_LoadClientInfo( int clientNum, clientInfo_t *ci ) {
 
 	// sounds
 	dir = ci->modelName;
-	fallback = (cgs.gametype >= GT_TEAM) ? DEFAULT_TEAM_MODEL : DEFAULT_MODEL;
+	// fallback = (cgs.gametype >= GT_TEAM) ? DEFAULT_TEAM_MODEL : DEFAULT_MODEL;
+	fallback = DEFAULT_MODEL;
 
 	for ( i = 0 ; i < MAX_CUSTOM_SOUNDS ; i++ ) {
 		s = cg_customSoundNames[i];
@@ -777,8 +803,8 @@ static qboolean CG_ScanForExistingClientInfo( clientInfo_t *ci ) {
 		if ( !Q_stricmp( ci->modelName, match->modelName )
 			&& !Q_stricmp( ci->skinName, match->skinName )
 			&& !Q_stricmp( ci->headModelName, match->headModelName )
-			&& !Q_stricmp( ci->headSkinName, match->headSkinName ) 
-			&& !Q_stricmp( ci->blueTeam, match->blueTeam ) 
+			&& !Q_stricmp( ci->headSkinName, match->headSkinName )
+			&& !Q_stricmp( ci->blueTeam, match->blueTeam )
 			&& !Q_stricmp( ci->redTeam, match->redTeam )
 			&& (cgs.gametype < GT_TEAM || ci->team == match->team) ) {
 			// this clientinfo is identical, so use its handles
@@ -878,7 +904,12 @@ void CG_NewClientInfo( int clientNum ) {
 	clientInfo_t newInfo;
 	const char	*configstring;
 	const char	*v;
+
+	char		*modelStr;
 	char		*slash;
+	char		*skinStr;
+
+	int i;
 
 	ci = &cgs.clientinfo[clientNum];
 
@@ -912,6 +943,18 @@ void CG_NewClientInfo( int clientNum ) {
 	newInfo.c2RGBA[1] = 255 * newInfo.color2[1];
 	newInfo.c2RGBA[2] = 255 * newInfo.color2[2];
 	newInfo.c2RGBA[3] = 255;
+
+	//aibsmod - true colors
+	v = Info_ValueForKey(configstring, "cc");
+	for (i=0; i<5; ++i) {
+		if (v[i] == '\0') //end of string, quit so below can fill the rest with '-'
+			break;
+
+		newInfo.colors[i] = v[i];
+	}
+
+	for (; i<5; ++i)
+		newInfo.colors[i] = '-';
 
 	// bot skill
 	v = Info_ValueForKey( configstring, "skill" );
@@ -949,91 +992,73 @@ void CG_NewClientInfo( int clientNum ) {
 
 	// model
 	v = Info_ValueForKey( configstring, "model" );
-	if ( cg_forceModel.integer ) {
-		// forcemodel makes everyone use a single model
-		// to prevent load hitches
-		char modelStr[MAX_QPATH];
-		char *skin;
 
-		if( cgs.gametype >= GT_TEAM ) {
-			Q_strncpyz( newInfo.modelName, DEFAULT_TEAM_MODEL, sizeof( newInfo.modelName ) );
-			Q_strncpyz( newInfo.skinName, "default", sizeof( newInfo.skinName ) );
-		} else {
-			trap_Cvar_VariableStringBuffer( "model", modelStr, sizeof( modelStr ) );
-			if ( ( skin = strchr( modelStr, '/' ) ) == NULL) {
-				skin = "default";
-			} else {
-				*skin++ = 0;
-			}
-
-			Q_strncpyz( newInfo.skinName, skin, sizeof( newInfo.skinName ) );
-			Q_strncpyz( newInfo.modelName, modelStr, sizeof( newInfo.modelName ) );
-		}
-
-		if ( cgs.gametype >= GT_TEAM ) {
-			// keep skin name
-			slash = strchr( v, '/' );
-			if ( slash ) {
-				Q_strncpyz( newInfo.skinName, slash + 1, sizeof( newInfo.skinName ) );
-			}
-		}
+	//Decide which model to use
+	if (cg_forceModel.integer && (clientNum != cg.clientNum)) { //forceModel and not self
+		if ((cgs.gametype >= GT_TEAM) && (newInfo.team == cgs.clientinfo[cg.clientNum].team)) //team game and friendly
+			modelStr = team_model.string;
+		else
+			modelStr = enemy_model.string;
 	} else {
-		Q_strncpyz( newInfo.modelName, v, sizeof( newInfo.modelName ) );
-
-		slash = strchr( newInfo.modelName, '/' );
-		if ( !slash ) {
-			// modelName didn not include a skin name
-			Q_strncpyz( newInfo.skinName, "default", sizeof( newInfo.skinName ) );
-		} else {
-			Q_strncpyz( newInfo.skinName, slash + 1, sizeof( newInfo.skinName ) );
-			// truncate modelName
-			*slash = 0;
-		}
+		modelStr = (char *) v;
 	}
+
+	if (!*modelStr)
+		modelStr = DEFAULT_MODEL;
+
+	//Need to use newInfo.modelName as a buffer here, so store it first
+	Q_strncpyz(newInfo.modelName, modelStr, sizeof(newInfo.modelName));
+	modelStr = newInfo.modelName;
+
+	slash = strchr(modelStr, '/');
+
+	if (!slash) { //no skin name
+		skinStr = "default";
+	} else { //get skin name and replace / with \0
+		skinStr = slash + 1;
+		*slash = '\0';
+	}
+
+	Q_strncpyz(newInfo.skinName, skinStr, sizeof(newInfo.skinName));
 
 	// head model
 	v = Info_ValueForKey( configstring, "hmodel" );
-	if ( cg_forceModel.integer ) {
-		// forcemodel makes everyone use a single model
-		// to prevent load hitches
-		char modelStr[MAX_QPATH];
-		char *skin;
 
-		if( cgs.gametype >= GT_TEAM ) {
-			Q_strncpyz( newInfo.headModelName, DEFAULT_TEAM_HEAD, sizeof( newInfo.headModelName ) );
-			Q_strncpyz( newInfo.headSkinName, "default", sizeof( newInfo.headSkinName ) );
-		} else {
-			trap_Cvar_VariableStringBuffer( "headmodel", modelStr, sizeof( modelStr ) );
-			if ( ( skin = strchr( modelStr, '/' ) ) == NULL) {
-				skin = "default";
-			} else {
-				*skin++ = 0;
-			}
-
-			Q_strncpyz( newInfo.headSkinName, skin, sizeof( newInfo.headSkinName ) );
-			Q_strncpyz( newInfo.headModelName, modelStr, sizeof( newInfo.headModelName ) );
-		}
-
-		if ( cgs.gametype >= GT_TEAM ) {
-			// keep skin name
-			slash = strchr( v, '/' );
-			if ( slash ) {
-				Q_strncpyz( newInfo.headSkinName, slash + 1, sizeof( newInfo.headSkinName ) );
-			}
-		}
+	//Decide which head model to use
+	if (cg_forceModel.integer && (clientNum != cg.clientNum)) { //forceModel and not self
+		if ((cgs.gametype >= GT_TEAM) && (newInfo.team == cgs.clientinfo[cg.clientNum].team)) //team game and friendly
+			modelStr = team_headmodel.string;
+		else
+			modelStr = enemy_headmodel.string;
 	} else {
-		Q_strncpyz( newInfo.headModelName, v, sizeof( newInfo.headModelName ) );
-
-		slash = strchr( newInfo.headModelName, '/' );
-		if ( !slash ) {
-			// modelName didn not include a skin name
-			Q_strncpyz( newInfo.headSkinName, "default", sizeof( newInfo.headSkinName ) );
-		} else {
-			Q_strncpyz( newInfo.headSkinName, slash + 1, sizeof( newInfo.headSkinName ) );
-			// truncate modelName
-			*slash = 0;
-		}
+		modelStr = (char *) v;
 	}
+
+	if (!*modelStr)
+		modelStr = DEFAULT_MODEL;
+
+	//Need to use newInfo.modelName as a buffer here, so store it first
+	Q_strncpyz(newInfo.headModelName, modelStr, sizeof(newInfo.headModelName));
+	modelStr = newInfo.headModelName;
+
+	slash = strchr(modelStr, '/');
+
+	if (!slash) { //no skin name
+		skinStr = "default";
+	} else { //get skin name and replace / with \0
+		skinStr = slash + 1;
+		*slash = '\0';
+	}
+
+	Q_strncpyz(newInfo.headSkinName, skinStr, sizeof(newInfo.headSkinName));
+
+/*	CG_Printf("%s head: \"%s\" skin: \"%s\" body: \"%s\" skin: \"%s\"..\n",
+		newInfo.name,
+		newInfo.headModelName,
+		newInfo.headSkinName,
+		newInfo.modelName,
+		newInfo.skinName
+	); */
 
 	// scan for an existing clientinfo that matches this modelname
 	// so we can avoid loading checks if possible
@@ -1304,7 +1329,7 @@ static void CG_SwingAngles( float destination, float swingTolerance, float clamp
 	if ( !*swinging ) {
 		return;
 	}
-	
+
 	// modify the speed depending on the delta
 	// so it doesn't seem so linear
 	swing = AngleSubtract( destination, *angle );
@@ -1398,8 +1423,8 @@ static void CG_PlayerAngles( centity_t *cent, vec3_t legs[3], vec3_t torso[3], v
 	// --------- yaw -------------
 
 	// allow yaw to drift a bit
-	if ( ( cent->currentState.legsAnim & ~ANIM_TOGGLEBIT ) != LEGS_IDLE 
-		|| ((cent->currentState.torsoAnim & ~ANIM_TOGGLEBIT) != TORSO_STAND 
+	if ( ( cent->currentState.legsAnim & ~ANIM_TOGGLEBIT ) != LEGS_IDLE
+		|| ((cent->currentState.torsoAnim & ~ANIM_TOGGLEBIT) != TORSO_STAND
 		&& (cent->currentState.torsoAnim & ~ANIM_TOGGLEBIT) != TORSO_STAND2)) {
 		// if not standing still, always point all in the same direction
 		cent->pe.torso.yawing = qtrue;	// always center
@@ -1519,10 +1544,10 @@ static void CG_HasteTrail( centity_t *cent ) {
 	VectorCopy( cent->lerpOrigin, origin );
 	origin[2] -= 16;
 
-	smoke = CG_SmokePuff( origin, vec3_origin, 
-				  8, 
+	smoke = CG_SmokePuff( origin, vec3_origin,
+				  8,
 				  1, 1, 1, 1,
-				  500, 
+				  500,
 				  cg.time,
 				  0,
 				  0,
@@ -1852,6 +1877,11 @@ static void CG_PlayerPowerups( centity_t *cent, refEntity_t *torso ) {
 		trap_R_AddLightToScene( cent->lerpOrigin, 200 + (rand()&31), 0.2f, 0.2f, 1 );
 	}
 
+	//aibsmod - rambo gives a dlight too
+	if ((cgs.gametype == GT_RAMBO || cgs.gametype == GT_RAMBO_TEAM) && (powerups & (1<<PW_CARRIER))) {
+		trap_R_AddLightToScene(cent->lerpOrigin, 200+(rand()&31), 0.2f, 1.0f, 0.2f);
+	}
+
 	// flight plays a looped sound
 	if ( powerups & ( 1 << PW_FLIGHT ) ) {
 		trap_S_AddLoopingSound( cent->currentState.number, cent->lerpOrigin, vec3_origin, cgs.media.flightSound );
@@ -1951,19 +1981,36 @@ static void CG_PlayerSprites( centity_t *cent ) {
 		return;
 	}
 
-	if ( cent->currentState.eFlags & EF_AWARD_IMPRESSIVE ) {
-		CG_PlayerFloatSprite( cent, cgs.media.medalImpressive );
-		return;
-	}
+	if (cgs.gametype == GT_ROCKETARENA) {
+		if (cent->currentState.eFlags & EF_AWARD_GAUNTLET) {
+			CG_PlayerFloatSprite(cent, cgs.media.medalAirCombo);
+			return;
+		}
 
-	if ( cent->currentState.eFlags & EF_AWARD_EXCELLENT ) {
-		CG_PlayerFloatSprite( cent, cgs.media.medalExcellent );
-		return;
-	}
+		if (cent->currentState.eFlags & EF_AWARD_IMPRESSIVE) {
+			CG_PlayerFloatSprite(cent, cgs.media.medalAirGrenade);
+			return;
+		}
 
-	if ( cent->currentState.eFlags & EF_AWARD_GAUNTLET ) {
-		CG_PlayerFloatSprite( cent, cgs.media.medalGauntlet );
-		return;
+		if (cent->currentState.eFlags & EF_AWARD_EXCELLENT) {
+			CG_PlayerFloatSprite(cent, cgs.media.medalAirRocket);
+			return;
+		}
+	} else {
+		if ( cent->currentState.eFlags & EF_AWARD_IMPRESSIVE ) {
+			CG_PlayerFloatSprite( cent, cgs.media.medalImpressive );
+			return;
+		}
+
+		if ( cent->currentState.eFlags & EF_AWARD_EXCELLENT ) {
+			CG_PlayerFloatSprite( cent, cgs.media.medalExcellent );
+			return;
+		}
+
+		if ( cent->currentState.eFlags & EF_AWARD_GAUNTLET ) {
+			CG_PlayerFloatSprite( cent, cgs.media.medalGauntlet );
+			return;
+		}
 	}
 
 	if ( cent->currentState.eFlags & EF_AWARD_DEFEND ) {
@@ -1982,7 +2029,7 @@ static void CG_PlayerSprites( centity_t *cent ) {
 	}
 
 	team = cgs.clientinfo[ cent->currentState.clientNum ].team;
-	if ( !(cent->currentState.eFlags & EF_DEAD) && 
+	if ( !(cent->currentState.eFlags & EF_DEAD) &&
 		cg.snap->ps.persistant[PERS_TEAM] == team &&
 		cgs.gametype >= GT_TEAM) {
 		if (cg_drawFriend.integer) {
@@ -2039,11 +2086,11 @@ static qboolean CG_PlayerShadow( centity_t *cent, float *shadowPlane ) {
 	alpha = 1.0 - trace.fraction;
 
 	// hack / FPE - bogus planes?
-	//assert( DotProduct( trace.plane.normal, trace.plane.normal ) != 0.0f ) 
+	//assert( DotProduct( trace.plane.normal, trace.plane.normal ) != 0.0f )
 
 	// add the mark as a temporary, so it goes directly to the renderer
 	// without taking a spot in the cg_marks array
-	CG_ImpactMark( cgs.media.shadowMarkShader, trace.endpos, trace.plane.normal, 
+	CG_ImpactMark( cgs.media.shadowMarkShader, trace.endpos, trace.plane.normal,
 		cent->pe.legs.yawAngle, alpha,alpha,alpha,1, qfalse, 24, qtrue );
 
 	return qtrue;
@@ -2148,6 +2195,14 @@ Also called by CG_Missile for quad rockets, but nobody can tell...
 ===============
 */
 void CG_AddRefEntityWithPowerups( refEntity_t *ent, entityState_t *state, int team ) {
+	//aibsmod - use a custom shader
+	if (amh_customPlayerShader.integer) {
+		if (amh_customPlayerShader.integer != 2)
+			trap_R_AddRefEntityToScene(ent);
+		ent->customShader = cgs.media.customPlayerShader;
+		trap_R_AddRefEntityToScene(ent);
+		return;
+	}
 
 	if ( state->powerups & ( 1 << PW_INVIS ) ) {
 		ent->customShader = cgs.media.invisShader;
@@ -2183,6 +2238,12 @@ void CG_AddRefEntityWithPowerups( refEntity_t *ent, entityState_t *state, int te
 			ent->customShader = cgs.media.battleSuitShader;
 			trap_R_AddRefEntityToScene( ent );
 		}
+
+		//aibsmod - rambo powerup
+		if ((cgs.gametype == GT_RAMBO || cgs.gametype == GT_RAMBO_TEAM) && (state->powerups & (1<<PW_CARRIER))) {
+			ent->customShader = cgs.media.ramboShader;
+			trap_R_AddRefEntityToScene(ent);
+		}
 	}
 }
 
@@ -2209,7 +2270,7 @@ int CG_LightVerts( vec3_t normal, int numVerts, polyVert_t *verts )
 			verts[i].modulate[2] = ambientLight[2];
 			verts[i].modulate[3] = 255;
 			continue;
-		} 
+		}
 		j = ( ambientLight[0] + incoming * directedLight[0] );
 		if ( j > 255 ) {
 			j = 255;
@@ -2283,6 +2344,11 @@ void CG_Player( centity_t *cent ) {
 		}
 	}
 
+	//aibsmod - draw players (not clones!) differently if the flag is set
+	if (cent->currentState.eType == ET_PLAYER && cent->currentState.eFlags & EF_DIFFERENT_MODEL) {
+		CG_DifferentModel(cent, renderfx);
+		return;
+	}
 
 	memset( &legs, 0, sizeof(legs) );
 	memset( &torso, 0, sizeof(torso) );
@@ -2290,7 +2356,7 @@ void CG_Player( centity_t *cent ) {
 
 	// get the rotation information
 	CG_PlayerAngles( cent, legs.axis, torso.axis, head.axis );
-	
+
 	// get the animation state (after rotation, to allow feet shuffle)
 	CG_PlayerAnimation( cent, &legs.oldframe, &legs.frame, &legs.backlerp,
 		 &torso.oldframe, &torso.frame, &torso.backlerp );
@@ -2307,6 +2373,18 @@ void CG_Player( centity_t *cent ) {
 	if ( cg_shadows.integer == 3 && shadow ) {
 		renderfx |= RF_SHADOW_PLANE;
 	}
+
+	//aibsmod - wallhack
+	if (amh_depth.integer)
+		renderfx |= RF_DEPTHHACK;
+
+	//aibsmod - CPMA skins
+	if (am_CPMASkins.integer) {
+		CG_SetShaderColors(clientNum, AM_COLORPART_LEGS, legs.shaderRGBA);
+		CG_SetShaderColors(clientNum, AM_COLORPART_TORSO, torso.shaderRGBA);
+		CG_SetShaderColors(clientNum, AM_COLORPART_HEAD, head.shaderRGBA);
+	}
+
 	renderfx |= RF_LIGHTING_ORIGIN;			// use the same origin for all
 #ifdef MISSIONPACK
 	if( cgs.gametype == GT_HARVESTER ) {
@@ -2371,7 +2449,7 @@ void CG_Player( centity_t *cent ) {
 			angle = ((cg.time / 4) & 255) * (M_PI * 2) / 255;
 			dir[2] = 15 + sin(angle) * 8;
 			VectorAdd(torso.origin, dir, skull.origin);
-			
+
 			dir[2] = 0;
 			VectorCopy(dir, skull.axis[1]);
 			VectorNormalize(skull.axis[1]);
@@ -2449,7 +2527,7 @@ void CG_Player( centity_t *cent ) {
 			dir[1] = cos(angle) * 20;
 			dir[2] = 0;
 			VectorAdd(torso.origin, dir, skull.origin);
-			
+
 			VectorCopy(dir, skull.axis[1]);
 			VectorNormalize(skull.axis[1]);
 			VectorSet(skull.axis[2], 0, 0, 1);
@@ -2605,7 +2683,7 @@ A player just came into view or teleported, so reset all animation info
 */
 void CG_ResetPlayerEntity( centity_t *cent ) {
 	cent->errorTime = -99999;		// guarantee no error decay added
-	cent->extrapolated = qfalse;	
+	cent->extrapolated = qfalse;
 
 	CG_ClearLerpFrame( &cgs.clientinfo[ cent->currentState.clientNum ], &cent->pe.legs, cent->currentState.legsAnim );
 	CG_ClearLerpFrame( &cgs.clientinfo[ cent->currentState.clientNum ], &cent->pe.torso, cent->currentState.torsoAnim );

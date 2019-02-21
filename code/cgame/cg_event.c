@@ -194,6 +194,34 @@ static void CG_Obituary( entityState_t *ent ) {
 			}
 			break;
 #endif
+		//aibsmod MODs
+		case MOD_ROCKET_BOUNCE:
+			if (gender == GENDER_FEMALE)
+				message = "caught her own rocket";
+			else if (gender == GENDER_NEUTER)
+				message = "caught its own rocket";
+			else
+				message = "caught his own rocket";
+			break;
+
+		case MOD_ROCKET_BOUNCE_SPLASH:
+			if (gender == GENDER_FEMALE)
+				message = "couldn't hide from her own rocket";
+			else if (gender == GENDER_NEUTER)
+				message = "couldn't hide from its own rocket";
+			else
+				message = "couldn't hide from his own rocket";
+			break;
+
+		case MOD_TRIPMINE_SPLASH:
+			if (gender == GENDER_FEMALE)
+				message = "tripped on her own tripmine";
+			else if (gender == GENDER_NEUTER)
+				message = "tripped on its own tripmine";
+			else
+				message = "tripped on his own tripmine";
+			break;
+
 		default:
 			if ( gender == GENDER_FEMALE )
 				message = "killed herself";
@@ -215,19 +243,25 @@ static void CG_Obituary( entityState_t *ent ) {
 		char	*s;
 
 		if ( cgs.gametype < GT_TEAM ) {
-			s = va("You fragged %s\n%s place with %i", targetName, 
+			s = va("You fragged %s\n%s place with %i", targetName,
 				CG_PlaceString( cg.snap->ps.persistant[PERS_RANK] + 1 ),
 				cg.snap->ps.persistant[PERS_SCORE] );
 		} else {
 			s = va("You fragged %s", targetName );
 		}
+
+		//aibsmod - kill notice might be disabled or at the top
+		if (am_drawKillNotice.integer == 1) {
 #ifdef MISSIONPACK
-		if (!(cg_singlePlayerActive.integer && cg_cameraOrbit.integer)) {
-			CG_CenterPrint( s, SCREEN_HEIGHT * 0.30, BIGCHAR_WIDTH );
-		} 
+			if (!(cg_singlePlayerActive.integer && cg_cameraOrbit.integer)) {
+				CG_CenterPrint( s, SCREEN_HEIGHT * 0.30, BIGCHAR_WIDTH );
+			}
 #else
-		CG_CenterPrint( s, SCREEN_HEIGHT * 0.30, BIGCHAR_WIDTH );
+			CG_CenterPrint( s, SCREEN_HEIGHT * 0.30, BIGCHAR_WIDTH );
 #endif
+		} else if (am_drawKillNotice.integer == 2) {
+			CG_CenterPrint(s, BIGCHAR_HEIGHT, BIGCHAR_WIDTH);
+		}
 
 		// print the text message as well
 	}
@@ -318,13 +352,39 @@ static void CG_Obituary( entityState_t *ent ) {
 			message = "tried to invade";
 			message2 = "'s personal space";
 			break;
+
+		//aibsmod stuff
+		case MOD_RAILGUN_PIERCE:
+			message = "couldn't hide from";
+			message2 = "'s piercing rail";
+			break;
+
+		case MOD_ROCKET_BOUNCE:
+			message = "caught";
+			message2 = "'s bouncy rocket";
+			break;
+
+		case MOD_ROCKET_BOUNCE_SPLASH:
+			message = "couldn't hide from";
+			message2 = "'s bouncy rocket";
+			break;
+
+		case MOD_TRIPMINE_SPLASH:
+			message = "tripped on";
+			message2 = "'s tripmine";
+			break;
+
+		case MOD_AIRROCKET:
+			message = "was shot down by";
+			break;
+
 		default:
 			message = "was killed by";
 			break;
 		}
 
 		if (message) {
-			CG_Printf( "%s %s %s%s\n", 
+			CG_Printf( "%s %s %s%s\n",
 				targetName, message, attackerName, message2);
 			return;
 		}
@@ -348,7 +408,7 @@ static void CG_UseItem( centity_t *cent ) {
 	entityState_t *es;
 
 	es = &cent->currentState;
-	
+
 	itemNum = (es->event & ~EV_EVENT_BITS) - EV_USE_ITEM0;
 	if ( itemNum < 0 || itemNum > HI_NUM_HOLDABLE ) {
 		itemNum = 0;
@@ -411,8 +471,11 @@ static void CG_ItemPickup( int itemNum ) {
 	if ( bg_itemlist[itemNum].giType == IT_WEAPON ) {
 		// select it immediately
 		if ( cg_autoswitch.integer && bg_itemlist[itemNum].giTag != WP_MACHINEGUN ) {
-			cg.weaponSelectTime = cg.time;
-			cg.weaponSelect = bg_itemlist[itemNum].giTag;
+			//aibsmod - if not the ball carrier and if weapons are not disabled
+			if ((cg.carrierNum != cg.snap->ps.clientNum) && (!am_disableWeapons.integer)) {
+				cg.weaponSelectTime = cg.time;
+				cg.weaponSelect = bg_itemlist[itemNum].giTag;
+			}
 		}
 	}
 
@@ -527,11 +590,16 @@ void CG_EntityEvent( centity_t *cent, vec3_t position ) {
 	int				clientNum;
 	clientInfo_t	*ci;
 
+	int				rnd;
+	vec3_t			color;
+	localEntity_t	*le;
+
 	es = &cent->currentState;
 	event = es->event & ~EV_EVENT_BITS;
 
 	if ( cg_debugEvents.integer ) {
-		CG_Printf( "ent:%3i  event:%3i ", es->number, event );
+		if (event != EV_CURRENT_BUTTONS) //aibsmod - no need to pollute with button events
+			CG_Printf( "ent:%3i  event:%3i ", es->number, event );
 	}
 
 	if ( !event ) {
@@ -552,35 +620,35 @@ void CG_EntityEvent( centity_t *cent, vec3_t position ) {
 	case EV_FOOTSTEP:
 		DEBUGNAME("EV_FOOTSTEP");
 		if (cg_footsteps.integer) {
-			trap_S_StartSound (NULL, es->number, CHAN_BODY, 
+			trap_S_StartSound (NULL, es->number, CHAN_BODY,
 				cgs.media.footsteps[ ci->footsteps ][rand()&3] );
 		}
 		break;
 	case EV_FOOTSTEP_METAL:
 		DEBUGNAME("EV_FOOTSTEP_METAL");
 		if (cg_footsteps.integer) {
-			trap_S_StartSound (NULL, es->number, CHAN_BODY, 
+			trap_S_StartSound (NULL, es->number, CHAN_BODY,
 				cgs.media.footsteps[ FOOTSTEP_METAL ][rand()&3] );
 		}
 		break;
 	case EV_FOOTSPLASH:
 		DEBUGNAME("EV_FOOTSPLASH");
 		if (cg_footsteps.integer) {
-			trap_S_StartSound (NULL, es->number, CHAN_BODY, 
+			trap_S_StartSound (NULL, es->number, CHAN_BODY,
 				cgs.media.footsteps[ FOOTSTEP_SPLASH ][rand()&3] );
 		}
 		break;
 	case EV_FOOTWADE:
 		DEBUGNAME("EV_FOOTWADE");
 		if (cg_footsteps.integer) {
-			trap_S_StartSound (NULL, es->number, CHAN_BODY, 
+			trap_S_StartSound (NULL, es->number, CHAN_BODY,
 				cgs.media.footsteps[ FOOTSTEP_SPLASH ][rand()&3] );
 		}
 		break;
 	case EV_SWIM:
 		DEBUGNAME("EV_SWIM");
 		if (cg_footsteps.integer) {
-			trap_S_StartSound (NULL, es->number, CHAN_BODY, 
+			trap_S_StartSound (NULL, es->number, CHAN_BODY,
 				cgs.media.footsteps[ FOOTSTEP_SPLASH ][rand()&3] );
 		}
 		break;
@@ -659,12 +727,12 @@ void CG_EntityEvent( centity_t *cent, vec3_t position ) {
 			vec3_t			up = {0, 0, 1};
 
 
-			CG_SmokePuff( cent->lerpOrigin, up, 
-						  32, 
+			CG_SmokePuff( cent->lerpOrigin, up,
+						  32,
 						  1, 1, 1, 0.33f,
-						  1000, 
+						  1000,
 						  cg.time, 0,
-						  LEF_PUFF_DONT_SCALE, 
+						  LEF_PUFF_DONT_SCALE,
 						  cgs.media.smokePuffShader );
 		}
 
@@ -983,7 +1051,7 @@ void CG_EntityEvent( centity_t *cent, vec3_t position ) {
 	case EV_RAILTRAIL:
 		DEBUGNAME("EV_RAILTRAIL");
 		cent->currentState.weapon = WP_RAILGUN;
-		
+
 		if(es->clientNum == cg.snap->ps.clientNum && !cg.renderingThirdPerson)
 		{
 			if(cg_drawGun.integer == 2)
@@ -992,7 +1060,8 @@ void CG_EntityEvent( centity_t *cent, vec3_t position ) {
 				VectorMA(es->origin2, 4, cg.refdef.viewaxis[1], es->origin2);
 		}
 
-		CG_RailTrail(ci, es->origin2, es->pos.trBase);
+		// CG_RailTrail(ci, es->origin2, es->pos.trBase);
+		CG_RailTrail( clientNum, es->origin2, es->pos.trBase );
 
 		// if the end was on a nomark surface, don't make an explosion
 		if ( es->eventParm != 255 ) {
@@ -1077,7 +1146,7 @@ void CG_EntityEvent( centity_t *cent, vec3_t position ) {
 					else {
 						if (cg.snap->ps.persistant[PERS_TEAM] == TEAM_BLUE) {
 #ifdef MISSIONPACK
-							if (cgs.gametype == GT_1FCTF) 
+							if (cgs.gametype == GT_1FCTF)
 								CG_AddBufferedSound( cgs.media.yourTeamTookTheFlagSound );
 							else
 #endif
@@ -1232,6 +1301,241 @@ void CG_EntityEvent( centity_t *cent, vec3_t position ) {
 		DEBUGNAME("EV_DEBUG_LINE");
 		CG_Beam( cent );
 		break;
+
+	//aibsmod stuff
+	case EV_RAMBO_STEAL:
+		DEBUGNAME("EV_RAMBO_STEAL");
+		if (es->eventParm == 1) { //stolen
+			CG_Printf("%s" S_COLOR_WHITE " became " S_COLOR_GREEN "rambo!" S_COLOR_WHITE "\n", Info_ValueForKey(CG_ConfigString(CS_PLAYERS + es->otherEntityNum2), "n"));
+			trap_S_StartSound(NULL, es->number, CHAN_AUTO, cgs.media.ramboStealSound);
+			cg.carrierNum = es->otherEntityNum2;
+		}
+
+		else if (es->eventParm == 2) { //stolen by red
+			CG_Printf("%s" S_COLOR_WHITE " (" S_COLOR_RED "red team" S_COLOR_WHITE ") became " S_COLOR_GREEN "rambo!" S_COLOR_WHITE "\n", Info_ValueForKey(CG_ConfigString(CS_PLAYERS + es->otherEntityNum2), "n"));
+			trap_S_StartSound(NULL, es->number, CHAN_AUTO, cgs.media.ramboStealSound);
+			cg.carrierNum = es->otherEntityNum2;
+		}
+
+		else if (es->eventParm == 3) { //stolen by blue
+			CG_Printf("%s" S_COLOR_WHITE " (" S_COLOR_BLUE "blue team" S_COLOR_WHITE ") became " S_COLOR_GREEN "rambo!" S_COLOR_WHITE "\n", Info_ValueForKey(CG_ConfigString(CS_PLAYERS + es->otherEntityNum2), "n"));
+			trap_S_StartSound(NULL, es->number, CHAN_AUTO, cgs.media.ramboStealSound);
+			cg.carrierNum = es->otherEntityNum2;
+		}
+
+		else if (es->eventParm == 4) { //lost
+			CG_Printf("%s lost " S_COLOR_GREEN "rambo!" S_COLOR_WHITE "\n", Info_ValueForKey(CG_ConfigString(CS_PLAYERS + es->otherEntityNum), "n"));
+			cg.carrierNum = -1;
+		}
+		break;
+
+	case EV_RAMBO_KILL:
+		DEBUGNAME("EV_RAMBO_KILL");
+		trap_S_StartSound(NULL, es->number, CHAN_AUTO, cgs.media.ramboKillSound);
+		break;
+
+	case EV_FOOTBALL_GOAL:
+		DEBUGNAME("EV_FOOTBALL_GOAL");
+		switch (es->eventParm) {
+			case 0:
+				CG_Printf("%s" S_COLOR_WHITE " has scored a goal!\n",  Info_ValueForKey(CG_ConfigString(CS_PLAYERS + es->otherEntityNum2), "n"));
+				CG_AddBufferedSound(cgs.media.yourTeamGoalSound);
+				break;
+
+			case 1: //red goal
+				CG_Printf("%s" S_COLOR_WHITE " (" S_COLOR_RED "red team" S_COLOR_WHITE ") has scored a goal!\n",  Info_ValueForKey(CG_ConfigString(CS_PLAYERS + es->otherEntityNum2), "n"));
+				CG_AddBufferedSound(cgs.media.goalCheerSound);
+				if (cgs.clientinfo[cg.clientNum].team == TEAM_RED)
+					CG_AddBufferedSound(cgs.media.yourTeamGoalSound);
+				else
+					CG_AddBufferedSound(cgs.media.opponentGoalSound);
+				break;
+
+			case 2: //blue goal
+				CG_Printf("%s" S_COLOR_WHITE " (" S_COLOR_BLUE "blue team" S_COLOR_WHITE ") has scored a goal!\n", Info_ValueForKey(CG_ConfigString(CS_PLAYERS + es->otherEntityNum2), "n"));
+				CG_AddBufferedSound(cgs.media.goalCheerSound);
+				if (cgs.clientinfo[cg.clientNum].team == TEAM_BLUE)
+					CG_AddBufferedSound(cgs.media.yourTeamGoalSound);
+				else
+					CG_AddBufferedSound(cgs.media.opponentGoalSound);
+				break;
+
+			case 3: //red own goal
+				CG_Printf("%s" S_COLOR_WHITE " (" S_COLOR_RED "red team" S_COLOR_WHITE ") has scored " S_COLOR_RED "AN OWN GOAL" S_COLOR_WHITE "!\n",  Info_ValueForKey(CG_ConfigString(CS_PLAYERS + es->otherEntityNum2), "n"));
+				CG_AddBufferedSound(cgs.media.goalSneerSound);
+				if (cgs.clientinfo[cg.clientNum].team == TEAM_RED)
+					CG_AddBufferedSound(cgs.media.yourTeamGoalSound);
+				else
+					CG_AddBufferedSound(cgs.media.opponentGoalSound);
+				break;
+
+			case 4: //blue own goal
+				CG_Printf("%s" S_COLOR_WHITE " (" S_COLOR_BLUE "blue team" S_COLOR_WHITE ") has scored " S_COLOR_RED "AN OWN GOAL" S_COLOR_WHITE "!\n",  Info_ValueForKey(CG_ConfigString(CS_PLAYERS + es->otherEntityNum2), "n"));
+				CG_AddBufferedSound(cgs.media.goalSneerSound);
+				if (cgs.clientinfo[cg.clientNum].team == TEAM_BLUE)
+					CG_AddBufferedSound(cgs.media.yourTeamGoalSound);
+				else
+					CG_AddBufferedSound(cgs.media.opponentGoalSound);
+				break;
+		}
+		break;
+
+	case EV_FOOTBALL_PASS:
+		DEBUGNAME("EV_FOOTBALL_PASS");
+		switch (es->eventParm) {
+			case 0: //reset
+				CG_Printf(S_COLOR_YELLOW "The ball has reset.\n");
+				CG_AddBufferedSound(cgs.media.ballResetSound);
+				cg.carrierNum = -1;
+				break;
+
+			case 1: //passed to red
+//				CG_Printf("%s" S_COLOR_WHITE " (" S_COLOR_RED "red team" S_COLOR_WHITE ") has the ball.\n", Info_ValueForKey(CG_ConfigString(CS_PLAYERS + es->otherEntityNum2), "n"));
+				if (cg.carrierNum == cg.snap->ps.clientNum) { //if stolen from us
+					CG_AddBufferedSound(cgs.media.youLostTheBallSound);
+				}
+
+				cg.carrierNum = es->otherEntityNum2;
+
+				//if us, switch to gauntlet and play warning sound
+				if (cg.carrierNum == cg.snap->ps.clientNum) {
+					cg.weaponSelect = WP_GAUNTLET;
+					CG_AddBufferedSound(cgs.media.youHaveTheBallSound);
+				}
+				break;
+
+			case 2: //passed to blue
+//				CG_Printf("%s" S_COLOR_WHITE " (" S_COLOR_BLUE "blue team" S_COLOR_WHITE ") has the ball.\n", Info_ValueForKey(CG_ConfigString(CS_PLAYERS + es->otherEntityNum2), "n"));
+				if (cg.carrierNum == cg.snap->ps.clientNum) { //if stolen from us
+					CG_AddBufferedSound(cgs.media.youLostTheBallSound);
+				}
+
+				cg.carrierNum = es->otherEntityNum2;
+
+				//if us, switch to gauntlet and play warning sound
+				if (cg.carrierNum == cg.snap->ps.clientNum) {
+					cg.weaponSelect = WP_GAUNTLET;
+					CG_AddBufferedSound(cgs.media.youHaveTheBallSound);
+				}
+				break;
+
+			case 4: //shot
+				rnd = rand() % 3;
+//				CG_Printf("%s" S_COLOR_WHITE " shot the ball.\n", Info_ValueForKey(CG_ConfigString(CS_PLAYERS + es->otherEntityNum2), "n"));
+
+				if (rnd == 0)
+					trap_S_StartSound(NULL, es->number, CHAN_AUTO, cgs.media.ballKick1Sound);
+				else if (rnd == 1)
+					trap_S_StartSound(NULL, es->number, CHAN_AUTO, cgs.media.ballKick2Sound);
+				else if (rnd == 2)
+					trap_S_StartSound(NULL, es->number, CHAN_AUTO, cgs.media.ballKick3Sound);
+
+				cg.carrierNum = -1;
+				break;
+
+			case 5: //dropped
+				cg.carrierNum = -1;
+				break;
+		}
+		break;
+/*
+	ent->s.angles2[0] = targetFlightTime;
+	ent->s.angles2[1] = targetVelocity;
+	ent->s.angles2[2] = rocketFlightTime;
+	ent->s.origin2[0] = ownerFlightTime;
+	ent->s.origin2[1] = ownerVelocity;
+*/
+	case EV_ROCKETARENA_HIT:
+/*		CG_Printf("%s" S_COLOR_WHITE " hit %s" S_COLOR_WHITE ", Tf: %0.1f, Tv: %0.1f / Rf: %0.1f / Sf: %0.1f, Sv: %0.1f\n",
+			Info_ValueForKey(CG_ConfigString(CS_PLAYERS + es->otherEntityNum2), "n"),
+			Info_ValueForKey(CG_ConfigString(CS_PLAYERS + es->otherEntityNum), "n"),
+			es->angles2[0],
+			es->angles2[1],
+			es->angles2[2],
+			es->origin2[0],
+			es->origin2[1]
+		);*/
+		break;
+
+	case EV_ROCKETARENA_COMBO:
+		if (es->eventParm == 2) {
+			CG_Printf("%s" S_COLOR_WHITE " scores a " S_COLOR_BLUE "double-hit" S_COLOR_WHITE " combo on %s" S_COLOR_WHITE "!\n",
+				Info_ValueForKey(CG_ConfigString(CS_PLAYERS + es->otherEntityNum2), "n"),
+				Info_ValueForKey(CG_ConfigString(CS_PLAYERS + es->otherEntityNum), "n")
+			);
+			CG_AddBufferedSound(cgs.media.airDoubleComboSound);
+		} else if (es->eventParm == 3) {
+			CG_Printf("%s" S_COLOR_WHITE " scores a " S_COLOR_GREEN "triple-hit" S_COLOR_WHITE " combo on %s" S_COLOR_WHITE "!\n",
+				Info_ValueForKey(CG_ConfigString(CS_PLAYERS + es->otherEntityNum2), "n"),
+				Info_ValueForKey(CG_ConfigString(CS_PLAYERS + es->otherEntityNum), "n")
+			);
+			CG_AddBufferedSound(cgs.media.airTripleComboSound);
+		} else if (es->eventParm >= 4) {
+			CG_Printf("%s" S_COLOR_WHITE " scores a " S_COLOR_RED "%i-HIT COMBO" S_COLOR_WHITE " on %s" S_COLOR_WHITE "!\n",
+				Info_ValueForKey(CG_ConfigString(CS_PLAYERS + es->otherEntityNum2), "n"),
+				es->eventParm,
+				Info_ValueForKey(CG_ConfigString(CS_PLAYERS + es->otherEntityNum), "n")
+			);
+			CG_AddBufferedSound(cgs.media.airBigComboSound);
+		}
+		break;
+
+	case EV_CURRENT_BUTTONS:
+//		DEBUGNAME("EV_CURRENT_BUTTONS");
+		//draw buttons only if the event belongs to us or the current spectatee
+		if (cg.snap->ps.clientNum == es->otherEntityNum)
+			cg.buttonState = es->eventParm;
+		break;
+
+	case EV_DROP_WEAPON:
+		DEBUGNAME("EV_DROP_WEAPON");
+		if (es->number == cg.snap->ps.clientNum) {
+			CG_DropWeaponChange();
+		}
+		break;
+
+	case EV_TRIPMINE_FIRE:
+		break;
+
+	case EV_TRIPMINE:
+		switch (es->eventParm) {
+			case 1: //tripmine arming
+				trap_S_StartSound(NULL, es->number, CHAN_AUTO, cgs.media.tripmineArmSound);
+				break;
+
+			case 2: //tripmine exploding sound
+				trap_S_StartSound(NULL, es->number, CHAN_AUTO, cgs.media.tripmineExplodeSound);
+				break;
+
+			case 3: //tripmine explosion
+				trap_S_StartSound(es->origin, ENTITYNUM_WORLD, CHAN_AUTO, cgs.media.sfx_rockexp);
+
+				VectorSet(color, 1, 0.75, 0);
+
+				le = CG_MakeExplosion(es->origin, es->origin2, cgs.media.dishFlashModel, cgs.media.tripmineExplosionShader, 1000, qtrue);
+				le->light = 300;
+				VectorCopy(color, le->lightColor);
+				CG_ImpactMark(cgs.media.burnMarkShader, es->origin, es->origin2, random()*360, 1,1,1,1, qfalse, 128, qfalse);
+
+				break;
+			/*	//aibsmod
+				case WP_TRIPMINE: //modified rocket explosion
+					mod = ;
+					shader = ;
+					sfx = ;
+					mark = ;
+					radius = 128;
+					light = 300;
+					isSprite = qtrue;
+					duration = 1000;
+					lightColor[0] = 1;
+					lightColor[1] = 0.75;
+					lightColor[2] = 0.0;*/
+
+
+		}
+		break;
+	//aibsmod stuff ends
 
 	default:
 		DEBUGNAME("UNKNOWN");

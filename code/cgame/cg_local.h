@@ -20,6 +20,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 //
+#include "../game/aibsmod.h"
 #include "../qcommon/q_shared.h"
 #include "../renderercommon/tr_types.h"
 #include "../game/bg_public.h"
@@ -80,6 +81,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define TEAM_OVERLAY_MAXLOCATION_WIDTH	16
 
 #define	DEFAULT_MODEL			"sarge"
+/*
 #ifdef MISSIONPACK
 #define	DEFAULT_TEAM_MODEL		"james"
 #define	DEFAULT_TEAM_HEAD		"*james"
@@ -87,7 +89,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define	DEFAULT_TEAM_MODEL		"sarge"
 #define	DEFAULT_TEAM_HEAD		"sarge"
 #endif
-
+*/
 #define DEFAULT_REDTEAM_NAME		"Stroggs"
 #define DEFAULT_BLUETEAM_NAME		"Pagans"
 
@@ -181,7 +183,7 @@ typedef struct centity_s {
 	int				errorTime;		// decay the error from this time
 	vec3_t			errorOrigin;
 	vec3_t			errorAngles;
-	
+
 	qboolean		extrapolated;	// false if origin / angles is an interpolation
 	vec3_t			rawOrigin;
 	vec3_t			rawAngles;
@@ -273,7 +275,7 @@ typedef struct localEntity_s {
 	leMarkType_t		leMarkType;		// mark to leave on fragment impact
 	leBounceSoundType_t	leBounceSoundType;
 
-	refEntity_t		refEntity;		
+	refEntity_t		refEntity;
 } localEntity_t;
 
 //======================================================================
@@ -314,7 +316,7 @@ typedef struct {
 
 	vec3_t			color1;
 	vec3_t			color2;
-	
+
 	byte c1RGBA[4];
 	byte c2RGBA[4];
 
@@ -371,6 +373,8 @@ typedef struct {
 	animation_t		animations[MAX_TOTALANIMATIONS];
 
 	sfxHandle_t		sounds[MAX_CUSTOM_SOUNDS];
+
+	char			colors[AM_MAX_COLORPARTS];
 } clientInfo_t;
 
 
@@ -446,12 +450,12 @@ typedef struct {
 // occurs, and they will have visible effects for #define STEP_TIME or whatever msec after
 
 #define MAX_PREDICTED_EVENTS	16
- 
+
 typedef struct {
 	int			clientFrame;		// incremented each frame
 
 	int			clientNum;
-	
+
 	qboolean	demoPlayback;
 	qboolean	levelShot;			// taking a level menu screenshot
 	int			deferredPlayerLoading;
@@ -639,6 +643,18 @@ typedef struct {
 	char			testModelName[MAX_QPATH];
 	qboolean		testGun;
 
+	//aibsmod stuff
+	int			carrierNum;			//current rambo or ball carrier (or -1)
+	float		zpos;				//client height, used in speed calculations
+	float		xyzspeed;			//total speed
+
+	int			trackButtonsClient;	//the clientNum whose buttons we are tracking
+	int			buttonState;		//sent by the server so we can draw buttons pressed
+	vec3_t		footballPos;		//position of the football
+
+	amDemoFF_t	demoFastForward;
+	int			demoFFStopTime;
+
 } cg_t;
 
 
@@ -819,6 +835,44 @@ typedef struct {
 	qhandle_t	medalAssist;
 	qhandle_t	medalCapture;
 
+	//aibsmod models
+	qhandle_t	footballModel;
+
+	qhandle_t	goalpostRedTopModel;
+	qhandle_t	goalpostRedBackModel;
+	qhandle_t	goalpostRedLeftModel;
+	qhandle_t	goalpostRedRightModel;
+
+	qhandle_t	goalpostBlueTopModel;
+	qhandle_t	goalpostBlueBackModel;
+	qhandle_t	goalpostBlueLeftModel;
+	qhandle_t	goalpostBlueRightModel;
+
+	qhandle_t	tripmineModel;
+
+	//aibsmod shaders
+	qhandle_t	ramboShader;
+	qhandle_t	ramboWeaponShader;
+	qhandle_t	tripmineExplosionShader;
+	qhandle_t	customPlayerShader;
+
+	qhandle_t	medalAirRocket;
+	qhandle_t	medalAirGrenade;
+	qhandle_t	medalAirCombo;
+
+	qhandle_t	button_up_upShader;
+	qhandle_t	button_up_downShader;
+	qhandle_t	button_down_upShader;
+	qhandle_t	button_down_downShader;
+	qhandle_t	button_left_upShader;
+	qhandle_t	button_left_downShader;
+	qhandle_t	button_right_upShader;
+	qhandle_t	button_right_downShader;
+	qhandle_t	button_jump_upShader;
+	qhandle_t	button_jump_downShader;
+	qhandle_t	button_fire_upShader;
+	qhandle_t	button_fire_downShader;
+
 	// sounds
 	sfxHandle_t	quadSound;
 	sfxHandle_t	tracerSound;
@@ -948,6 +1002,44 @@ typedef struct {
 	sfxHandle_t	count1Sound;
 	sfxHandle_t	countFightSound;
 	sfxHandle_t	countPrepareSound;
+
+	//aibsmod sounds
+	sfxHandle_t	hit1Sound;
+	sfxHandle_t	hit2Sound;
+	sfxHandle_t	hit3Sound;
+	sfxHandle_t	hit4Sound;
+	sfxHandle_t	hit25Sound;
+	sfxHandle_t	hit50Sound;
+	sfxHandle_t	hit75Sound;
+	sfxHandle_t	hit100Sound;
+
+	sfxHandle_t	airRocketSound;
+	sfxHandle_t	airGrenadeSound;
+	sfxHandle_t	airComboSound;
+
+	sfxHandle_t airDoubleComboSound;
+	sfxHandle_t airTripleComboSound;
+	sfxHandle_t airBigComboSound;
+
+	sfxHandle_t ramboStealSound;
+	sfxHandle_t ramboKillSound;
+
+	sfxHandle_t tripmineArmSound;
+	sfxHandle_t tripmineExplodeSound;
+
+	sfxHandle_t ballKick1Sound;
+	sfxHandle_t ballKick2Sound;
+	sfxHandle_t ballKick3Sound;
+
+	sfxHandle_t ballResetSound;
+	sfxHandle_t youHaveTheBallSound;
+	sfxHandle_t youLostTheBallSound;
+
+	sfxHandle_t yourTeamGoalSound;
+	sfxHandle_t opponentGoalSound;
+
+	sfxHandle_t goalCheerSound;
+	sfxHandle_t goalSneerSound;
 
 #ifdef MISSIONPACK
 	// new stuff
@@ -1191,6 +1283,38 @@ extern  vmCvar_t		cg_recordSPDemoName;
 extern	vmCvar_t		cg_obeliskRespawnDelay;
 #endif
 
+//aibsmod client side cvars, also see bg_public.h
+extern	vmCvar_t		am_drawFootballTracer;
+
+extern	vmCvar_t		am_drawKillNotice;
+extern	vmCvar_t		am_drawSpeed;
+extern	vmCvar_t		am_drawSpeedMethod;
+extern	vmCvar_t		am_drawSpeedFrames;
+extern	vmCvar_t		am_drawSpeedFull;
+extern	vmCvar_t		am_drawButtons;
+
+extern	vmCvar_t		am_hitFeedback;
+extern	vmCvar_t		am_chatBeep;
+extern	vmCvar_t		am_weaponBob;
+
+extern	vmCvar_t		am_CPMASkins;
+extern	vmCvar_t		am_colors;
+extern	vmCvar_t		am_enemyColors;
+extern	vmCvar_t		am_friendlyColors;
+
+extern	vmCvar_t		am_demoFastForwardSpeed;
+
+extern	vmCvar_t		amh_depth;
+extern	vmCvar_t		amh_customPlayerShader;
+
+//making these proper cvars, sigh
+extern	vmCvar_t		model;
+extern	vmCvar_t		headmodel;
+extern	vmCvar_t		team_model;
+extern	vmCvar_t		team_headmodel;
+extern	vmCvar_t		enemy_model;
+extern	vmCvar_t		enemy_headmodel;
+
 //
 // cg_main.c
 //
@@ -1238,11 +1362,11 @@ void CG_DrawActiveFrame( int serverTime, stereoFrame_t stereoView, qboolean demo
 void CG_AdjustFrom640( float *x, float *y, float *w, float *h );
 void CG_FillRect( float x, float y, float width, float height, const float *color );
 void CG_DrawPic( float x, float y, float width, float height, qhandle_t hShader );
-void CG_DrawString( float x, float y, const char *string, 
+void CG_DrawString( float x, float y, const char *string,
 				   float charWidth, float charHeight, const float *modulate );
 
 
-void CG_DrawStringExt( int x, int y, const char *string, const float *setColor, 
+void CG_DrawStringExt( int x, int y, const char *string, const float *setColor,
 		qboolean forceColor, qboolean shadow, int charWidth, int charHeight, int maxChars );
 void CG_DrawBigString( int x, int y, const char *s, float alpha );
 void CG_DrawBigStringColor( int x, int y, const char *s, vec4_t color );
@@ -1295,7 +1419,7 @@ void CG_InitTeamChat( void );
 void CG_GetTeamColor(vec4_t *color);
 const char *CG_GetGameStatusText( void );
 const char *CG_GetKillerText( void );
-void CG_Draw3DModel(float x, float y, float w, float h, qhandle_t model, qhandle_t skin, vec3_t origin, vec3_t angles);
+void CG_Draw3DModel(float x, float y, float w, float h, qhandle_t model, qhandle_t skin, vec3_t origin, vec3_t angles, int clientNum, amColorpart_t part);
 void CG_Text_PaintChar(float x, float y, float width, float height, float scale, float s, float t, float s2, float t2, qhandle_t hShader);
 void CG_CheckOrderPending( void );
 const char *CG_GameTypeString( void );
@@ -1319,7 +1443,7 @@ sfxHandle_t	CG_CustomSound( int clientNum, const char *soundName );
 //
 void CG_BuildSolidList( void );
 int	CG_PointContents( const vec3_t point, int passEntityNum );
-void CG_Trace( trace_t *result, const vec3_t start, const vec3_t mins, const vec3_t maxs, const vec3_t end, 
+void CG_Trace( trace_t *result, const vec3_t start, const vec3_t mins, const vec3_t maxs, const vec3_t end,
 					 int skipNumber, int mask );
 void CG_PredictPlayerState( void );
 void CG_LoadDeferredPlayers( void );
@@ -1342,9 +1466,9 @@ void CG_AddPacketEntities( void );
 void CG_Beam( centity_t *cent );
 void CG_AdjustPositionForMover(const vec3_t in, int moverNum, int fromTime, int toTime, vec3_t out, vec3_t angles_in, vec3_t angles_out);
 
-void CG_PositionEntityOnTag( refEntity_t *entity, const refEntity_t *parent, 
+void CG_PositionEntityOnTag( refEntity_t *entity, const refEntity_t *parent,
 							qhandle_t parentModel, char *tagName );
-void CG_PositionRotatedEntityOnTag( refEntity_t *entity, const refEntity_t *parent, 
+void CG_PositionRotatedEntityOnTag( refEntity_t *entity, const refEntity_t *parent,
 							qhandle_t parentModel, char *tagName );
 
 
@@ -1365,7 +1489,7 @@ void CG_MissileHitPlayer( int weapon, vec3_t origin, vec3_t dir, int entityNum )
 void CG_ShotgunFire( entityState_t *es );
 void CG_Bullet( vec3_t origin, int sourceEntityNum, vec3_t normal, qboolean flesh, int fleshEntityNum );
 
-void CG_RailTrail( clientInfo_t *ci, vec3_t start, vec3_t end );
+void CG_RailTrail( int clientNum, vec3_t start, vec3_t end );
 void CG_GrappleTrail( centity_t *ent, const weaponInfo_t *wi );
 void CG_AddViewWeapon (playerState_t *ps);
 void CG_AddPlayerWeapon( refEntity_t *parent, playerState_t *ps, centity_t *cent, int team );
@@ -1378,11 +1502,11 @@ void CG_OutOfAmmoChange( void );	// should this be in pmove?
 //
 void	CG_InitMarkPolys( void );
 void	CG_AddMarks( void );
-void	CG_ImpactMark( qhandle_t markShader, 
-				    const vec3_t origin, const vec3_t dir, 
-					float orientation, 
-				    float r, float g, float b, float a, 
-					qboolean alphaFade, 
+void	CG_ImpactMark( qhandle_t markShader,
+				    const vec3_t origin, const vec3_t dir,
+					float orientation,
+				    float r, float g, float b, float a,
+					qboolean alphaFade,
 					float radius, qboolean temporary );
 
 //
@@ -1395,8 +1519,8 @@ void	CG_AddLocalEntities( void );
 //
 // cg_effects.c
 //
-localEntity_t *CG_SmokePuff( const vec3_t p, 
-				   const vec3_t vel, 
+localEntity_t *CG_SmokePuff( const vec3_t p,
+				   const vec3_t vel,
 				   float radius,
 				   float r, float g, float b, float a,
 				   float duration,
@@ -1470,6 +1594,25 @@ void CG_Respawn( void );
 void CG_TransitionPlayerState( playerState_t *ps, playerState_t *ops );
 void CG_CheckChangedPredictableEvents( playerState_t *ps );
 
+//cg_aibsmod.c - aibsmod stuff
+float getPlayerSpeed(void);
+float CG_DrawBigSpeed(float y);
+void CG_DrawSmallSpeed(void);
+void CG_DrawButtons(void);
+
+void CG_AibsmodEntities(void);
+
+void CG_Laser(const vec3_t start, const vec3_t end, const vec3_t color);
+void CG_Football(centity_t *cent);
+void CG_FootballGoalpost(centity_t *cent);
+void CG_Tripmine(centity_t *cent);
+void CG_BBox(centity_t *cent);
+void CG_DrawFootballTracer(void);
+
+void CG_DropWeaponChange(void);
+
+void CG_SetColors(int clientNum, amColorpart_t part, float targetRGB[3]);
+void CG_SetShaderColors(int clientNum, amColorpart_t part, byte targetRGBA[4]);
 
 //===============================================
 
@@ -1547,7 +1690,7 @@ void		trap_CM_TransformedCapsuleTrace( trace_t *results, const vec3_t start, con
 					  const vec3_t origin, const vec3_t angles );
 
 // Returns the projection of a polygon onto the solid brushes in the world
-int			trap_CM_MarkFragments( int numPoints, const vec3_t *points, 
+int			trap_CM_MarkFragments( int numPoints, const vec3_t *points,
 			const vec3_t projection,
 			int maxPoints, vec3_t pointBuffer,
 			int maxFragments, markFragment_t *fragmentBuffer );
@@ -1595,10 +1738,10 @@ void		trap_R_AddAdditiveLightToScene( const vec3_t org, float intensity, float r
 int			trap_R_LightForPoint( vec3_t point, vec3_t ambientLight, vec3_t directedLight, vec3_t lightDir );
 void		trap_R_RenderScene( const refdef_t *fd );
 void		trap_R_SetColor( const float *rgba );	// NULL = 1,1,1,1
-void		trap_R_DrawStretchPic( float x, float y, float w, float h, 
+void		trap_R_DrawStretchPic( float x, float y, float w, float h,
 			float s1, float t1, float s2, float t2, qhandle_t hShader );
 void		trap_R_ModelBounds( clipHandle_t model, vec3_t mins, vec3_t maxs );
-int			trap_R_LerpTag( orientation_t *tag, clipHandle_t mod, int startFrame, int endFrame, 
+int			trap_R_LerpTag( orientation_t *tag, clipHandle_t mod, int startFrame, int endFrame,
 					   float frac, const char *tagName );
 void		trap_R_RemapShader( const char *oldShader, const char *newShader, const char *timeOffset );
 qboolean	trap_R_inPVS( const vec3_t p1, const vec3_t p2 );
@@ -1631,7 +1774,7 @@ qboolean	trap_GetServerCommand( int serverCommandNumber );
 // this will always be at least one higher than the number in the current
 // snapshot, and it may be quite a few higher if it is a fast computer on
 // a lagged connection
-int			trap_GetCurrentCmdNumber( void );	
+int			trap_GetCurrentCmdNumber( void );
 
 qboolean	trap_GetUserCmd( int cmdNumber, usercmd_t *ucmd );
 
