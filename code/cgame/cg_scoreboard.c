@@ -51,6 +51,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define SB_HEAD_X			(SCOREBOARD_X+64)
 
 #define SB_SCORELINE_X		112
+#define SB_SCORELINE_STATS_X	0
 
 #define SB_RATING_WIDTH	    (6 * BIGCHAR_WIDTH) // width 6
 #define SB_SCORE_X			(SB_SCORELINE_X + BIGCHAR_WIDTH) // width 6
@@ -80,6 +81,7 @@ CG_DrawScoreboard
 */
 static void CG_DrawClientScore( int y, score_t *score, float *color, float fade, qboolean largeFormat ) {
 	char	string[1024];
+	char	string2[1024];
 	vec3_t	headAngles;
 	clientInfo_t	*ci;
 	int iconx, headx;

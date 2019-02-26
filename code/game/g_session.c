@@ -128,6 +128,7 @@ void G_InitSessionData( gclient_t *client, char *userinfo ) {
 	} else {
 		//aibsmod - make g_teamAutoJoin apply to non-team games as well...
 		if (g_teamAutoJoin.integer) {
+			// -removed in ioq3 somehow- value = Info_ValueForKey( userinfo, "team" );
 			if ( value[0] == 's' ) {
 				// a willing spectator, not a waiting-in-line
 				sess->sessionTeam = TEAM_SPECTATOR;
@@ -154,12 +155,13 @@ void G_InitSessionData( gclient_t *client, char *userinfo ) {
 					break;
 				}
 			}
-			else { //aibsmod - ...and make everyone join as a spectator if not set
-				sess->sessionTeam = TEAM_SPECTATOR;
-			}
+		}
+		else { //aibsmod - ...and make everyone join as a spectator if not set
+			sess->sessionTeam = TEAM_SPECTATOR;
 		}
 
 		sess->spectatorState = SPECTATOR_FREE;
+		// -removed in ioq3 somehow- sess->spectatorTime = level.time;
 	}
 
 	AddTournamentQueue(client);

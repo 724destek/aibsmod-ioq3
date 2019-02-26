@@ -2387,6 +2387,7 @@ Q3CGOBJ_ = \
   $(B)/$(BASEGAME)/cgame/cg_snapshot.o \
   $(B)/$(BASEGAME)/cgame/cg_view.o \
   $(B)/$(BASEGAME)/cgame/cg_weapons.o \
+  $(B)/$(BASEGAME)/cgame/cg_aibsmod.o \
   \
   $(B)/$(BASEGAME)/qcommon/q_math.o \
   $(B)/$(BASEGAME)/qcommon/q_shared.o
@@ -2431,6 +2432,7 @@ MPCGOBJ_ = \
   $(B)/$(MISSIONPACK)/cgame/cg_snapshot.o \
   $(B)/$(MISSIONPACK)/cgame/cg_view.o \
   $(B)/$(MISSIONPACK)/cgame/cg_weapons.o \
+  $(B)/$(MISSIONPACK)/cgame/cg_aibsmod.o \
   $(B)/$(MISSIONPACK)/ui/ui_shared.o \
   \
   $(B)/$(MISSIONPACK)/qcommon/q_math.o \
@@ -2485,6 +2487,11 @@ Q3GOBJ_ = \
   $(B)/$(BASEGAME)/game/g_trigger.o \
   $(B)/$(BASEGAME)/game/g_utils.o \
   $(B)/$(BASEGAME)/game/g_weapon.o \
+  $(B)/$(BASEGAME)/game/g_aibsmod.o \
+  $(B)/$(BASEGAME)/game/g_football.o \
+  $(B)/$(BASEGAME)/game/g_tripmine.o \
+  $(B)/$(BASEGAME)/game/g_redeemer.o \
+  $(B)/$(BASEGAME)/game/g_rocketarena.o \
   \
   $(B)/$(BASEGAME)/qcommon/q_math.o \
   $(B)/$(BASEGAME)/qcommon/q_shared.o
@@ -2536,6 +2543,11 @@ MPGOBJ_ = \
   $(B)/$(MISSIONPACK)/game/g_trigger.o \
   $(B)/$(MISSIONPACK)/game/g_utils.o \
   $(B)/$(MISSIONPACK)/game/g_weapon.o \
+  $(B)/$(MISSIONPACK)/game/g_aibsmod.o \
+  $(B)/$(MISSIONPACK)/game/g_football.o \
+  $(B)/$(MISSIONPACK)/game/g_tripmine.o \
+  $(B)/$(MISSIONPACK)/game/g_redeemer.o \
+  $(B)/$(MISSIONPACK)/game/g_rocketarena.o \
   \
   $(B)/$(MISSIONPACK)/qcommon/q_math.o \
   $(B)/$(MISSIONPACK)/qcommon/q_shared.o

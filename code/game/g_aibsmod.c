@@ -136,7 +136,7 @@ void teleport_player_straight(gentity_t *player)
 		else if ( player->client->ps.powerups[PW_BLUEFLAG] ) {	// only happens in standard CTF
 			Team_ReturnFlag( TEAM_BLUE );
 		}
-		
+
 		TeleportPlayerWithoutShooting(player, endpoint, NULL);
 	}
 }

@@ -20,7 +20,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 //
-#include "../game/aibsmod.h"
 #include "../qcommon/q_shared.h"
 #include "../renderercommon/tr_types.h"
 #include "../game/bg_public.h"
@@ -1497,6 +1496,8 @@ void CG_DrawWeaponSelect( void );
 
 void CG_OutOfAmmoChange( void );	// should this be in pmove?
 
+/* static */ qboolean CG_WeaponSelectable( int i );
+
 //
 // cg_marks.c
 //
@@ -1599,6 +1600,7 @@ float getPlayerSpeed(void);
 float CG_DrawBigSpeed(float y);
 void CG_DrawSmallSpeed(void);
 void CG_DrawButtons(void);
+void CG_DifferentModel(centity_t *cent, int renderfx);
 
 void CG_AibsmodEntities(void);
 

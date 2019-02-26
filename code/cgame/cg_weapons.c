@@ -1504,7 +1504,7 @@ WEAPON SELECTION
 CG_WeaponSelectable
 ===============
 */
-static qboolean CG_WeaponSelectable( int i ) {
+/* static */ qboolean CG_WeaponSelectable( int i ) {
 	if ((i == WP_GRENADE_LAUNCHER) && am_tripmineGrenades.integer && (cg.snap->ps.ammo[WP_GRENADE_LAUNCHER] >= 0) && (cg.snap->ps.ammo[WP_GRENADE_LAUNCHER] < 5))
 		return qfalse;
 	else if ( !cg.snap->ps.ammo[i] ) {

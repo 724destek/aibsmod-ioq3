@@ -4,8 +4,8 @@
  *
  */
 
-#ifndef __AIBSMOD_H__
-#define __AIBSMOD_H__
+#ifndef __AIBSMOD_H
+#define __AIBSMOD_H
 
 #define GAMEVERSION		"aibsmod_test10"
 #define	GAME_VERSION	"aibsmod-1"
@@ -13,8 +13,8 @@
 #define VERSION_STRING	"aibsmod v1.00rc1"
 
 //Couldn't find a suitable place for these, didn't want to modify q_shared.h
-#define MIN(x,y) ((x < y) ? (x) : (y))
-#define MAX(x,y) ((x > y) ? (x) : (y))
+// #/ define MIN(x,y) ((x < y) ? (x) : (y))
+// #/ define MAX(x,y) ((x > y) ? (x) : (y))
 
 //buttonstate bitmask for the EV_CURRENT_BUTTONS event
 #define BTNFLAG_BUTTON_UP			1
@@ -112,4 +112,4 @@ typedef enum {
 #define TRIPMINE_LIFETIME		(300000 + TRIPMINE_ARM_TIME)
 #define TRIPMINE_EXPLODE_DELAY	200
 
-#endif /*__AIBSMOD_H__*/
+#endif	// __AIBSMOD_H

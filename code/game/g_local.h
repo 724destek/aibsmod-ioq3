@@ -674,6 +674,7 @@ void ClientCommand( int clientNum );
 void ClientThink( int clientNum );
 void ClientEndFrame( gentity_t *ent );
 void G_RunClient( gentity_t *ent );
+void ClientThink_real( gentity_t *ent );
 
 //
 // g_team.c
@@ -681,6 +682,7 @@ void G_RunClient( gentity_t *ent );
 qboolean OnSameTeam( gentity_t *ent1, gentity_t *ent2 );
 void Team_CheckDroppedItem( gentity_t *dropped );
 qboolean CheckObeliskAttack( gentity_t *obelisk, gentity_t *attacker );
+void Team_ForceGesture(int team);
 
 //
 // g_mem.c

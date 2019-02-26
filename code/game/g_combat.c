@@ -518,6 +518,9 @@ void player_die( gentity_t *self, gentity_t *inflictor, gentity_t *attacker, int
 
 	self->client->ps.persistant[PERS_KILLED]++;
 
+	if (attacker && attacker->client) {
+		attacker->client->lastkilled_client = self->s.number;
+
 		if (attacker == self) { //rambo suicide
 			AddScore(attacker, self->r.currentOrigin, -1);
 		} else if (OnSameTeam(self, attacker)) {
